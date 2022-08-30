@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /** Builds a StarRocks image. */
 public class StarRocksImageBuilder {
@@ -113,7 +112,7 @@ public class StarRocksImageBuilder {
         return this;
     }
 
-    public StarRocksImage build() throws TimeoutException {
+    public StarRocksImage build() {
         String imageFullName = getImageFullName();
         String starRocksHome = getStarRocksHome();
 
@@ -127,21 +126,27 @@ public class StarRocksImageBuilder {
         LOG.info("Building StarRocks image {} with starRocksHome: {}, installedPackages: {}, and binary url: {}.",
                 imageFullName, starRocksHome, installedPackages, starRocksBinaryUrl);
 
-        new ImageFromDockerfile(imageFullName, deleteOnExit)
-                .withDockerfileFromBuilder(builder ->
-                        builder
-                                .from(baseImageName)
-                                .run("yum -y install " + installedPackages)
-                                .run("mkdir -p " + starRocksHome)
-                                .run(String.format("wget -SO %s %s",
-                                        new File(workingDir, "starrocks.tar.gz").getAbsolutePath(),
-                                        starRocksBinaryUrl))
-                                .run(String.format("cd %s && tar zxf starrocks.tar.gz -C %s --strip-components 1 && rm starrocks.tar.gz",
-                                        workingDir, starRocksHome))
-                                .run(String.format("cd %s && mkdir -p %s && mkdir -p %s",
-                                        starRocksHome, "fe/meta", "be/storage"))
-                                .run("echo \"JAVA_HOME=$(dirname $(dirname $(readlink $(readlink $(which javac)))))\" >> ~/.bashrc"))
-                .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            new ImageFromDockerfile(imageFullName, deleteOnExit)
+                    .withDockerfileFromBuilder(builder ->
+                            builder
+                                    .from(baseImageName)
+                                    .run("yum -y install " + installedPackages)
+                                    .run("mkdir -p " + starRocksHome)
+                                    .run(String.format("wget -SO %s %s",
+                                            new File(workingDir, "starrocks.tar.gz").getAbsolutePath(),
+                                            starRocksBinaryUrl))
+                                    .run(String.format(
+                                            "cd %s && tar zxf starrocks.tar.gz -C %s --strip-components 1 && rm starrocks.tar.gz",
+                                            workingDir, starRocksHome))
+                                    .run(String.format("cd %s && mkdir -p %s && mkdir -p %s",
+                                            starRocksHome, "fe/meta", "be/storage")))
+                    .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            String errMsg = "Failed to build image " + imageFullName;
+            LOG.error("{}", errMsg, e);
+            throw new StarRocksContainerException(errMsg, e);
+        }
 
         LOG.info("Build StarRocks image {} successfully.", imageFullName);
         return new StarRocksImage(imageFullName, starRocksHome, starRocksVersion);
@@ -172,7 +177,7 @@ public class StarRocksImageBuilder {
         return String.join(":", DEFAULT_IMAGE_NAME, starRocksVersion);
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         StarRocksImage starRocksImage = new StarRocksImageBuilder()
                                             .setDeleteOnExit(false)
                                             .build();
