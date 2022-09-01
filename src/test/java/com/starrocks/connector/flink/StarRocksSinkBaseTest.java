@@ -199,7 +199,7 @@ public abstract class StarRocksSinkBaseTest {
                     put("COLUMN_NAME", k);
                     put("COLUMN_KEY", "");
                     put("DATA_TYPE", STARROCKS_TABLE_META.get(k).toString());
-                }}).collect(Collectors.toList());;
+                }}).collect(Collectors.toList());
             }
         };
     }

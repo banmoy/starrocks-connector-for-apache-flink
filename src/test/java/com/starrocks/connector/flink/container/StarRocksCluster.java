@@ -45,7 +45,6 @@ public class StarRocksCluster implements Closeable {
     private final static Duration DEFAULT_CONTAINER_START_TIMEOUT = Duration.ofMinutes(5);
     private final static Duration DEFAULT_ADD_COMPONENTS_TIMEOUT = Duration.ofSeconds(60);
 
-
     private final int numFeFollowers;
     private final int numFeObservers;
     private final int numBes;
@@ -77,6 +76,54 @@ public class StarRocksCluster implements Closeable {
         this.bes = new ArrayList<>();
     }
 
+    public String getQueryUrls() {
+        return getFeUrls(StarRocksFEContainer.QUERY_PORT);
+    }
+
+    public String getHttpUrls() {
+        return getFeUrls(StarRocksFEContainer.HTTP_PORT);
+    }
+
+    private String getFeUrls(int port) {
+        StringBuilder builder = new StringBuilder();
+        for (StarRocksFEContainer container : feFollowers) {
+            if (builder.length() > 1) {
+                builder.append(",");
+            }
+            builder.append("127.0.0.1:");
+            builder.append(container.getMappedPort(port));
+        }
+
+        for (StarRocksFEContainer container : feObservers) {
+            builder.append(",127.0.0.1:");
+            builder.append(container.getMappedPort(port));
+        }
+
+        return builder.toString();
+    }
+
+    public String getBeUrlMapping() {
+        StringBuilder builder = new StringBuilder();
+        for (StarRocksBEContainer container : bes) {
+            if (builder.length() != 0) {
+                builder.append(";");
+            }
+            builder.append("127.0.0.1:");
+            builder.append(container.getMappedPort(StarRocksBEContainer.BE_PORT));
+            builder.append(",");
+            builder.append(container.getNetworkIp());
+            builder.append(":");
+            builder.append(StarRocksBEContainer.BE_PORT);
+        }
+
+        return builder.toString();
+    }
+
+    public void executeMysqlCommand(String cmd) {
+        StarRocksFEContainer container = feFollowers.get(0);
+        container.executeMysqlCmd(cmd);
+    }
+
     public void start() throws Exception {
         LOG.info("Start to build the image for StarRocks {} ......", starRocksVersion);
         StarRocksImage starRocksImage = new StarRocksImageBuilder()
@@ -90,17 +137,17 @@ public class StarRocksCluster implements Closeable {
         for (int i = 0; i < numFeFollowers; i++) {
             // select the first FE as the helper
             StarRocksFEContainer feHelper = i == 0 ? null : feFollowers.get(0);
-            StarRocksFEContainer follower = createFEContainers(starRocksImage, feHelper, false, "fe-follower-" + i);
+            StarRocksFEContainer follower = createFEContainer(starRocksImage, feHelper, false, "fe-follower-" + i);
             feFollowers.add(follower);
         }
 
         for (int i = 0; i < numFeObservers; i++) {
-            StarRocksFEContainer observer = createFEContainers(starRocksImage, feFollowers.get(0), true, "fe-observer-" + i);
+            StarRocksFEContainer observer = createFEContainer(starRocksImage, feFollowers.get(0), true, "fe-observer-" + i);
             feObservers.add(observer);
         }
 
         for (int i = 0; i < numBes; i++) {
-            StarRocksBEContainer be = createBEContainers(starRocksImage, "be-" + i);
+            StarRocksBEContainer be = createBEContainer(starRocksImage, "be-" + i);
             bes.add(be);
         }
 
@@ -141,7 +188,7 @@ public class StarRocksCluster implements Closeable {
         network.close();
     }
 
-    private StarRocksFEContainer createFEContainers(
+    private StarRocksFEContainer createFEContainer(
             StarRocksImage starRocksImage, @Nullable StarRocksFEContainer helper, boolean isObserver, String id) {
         StarRocksFEContainer container = new StarRocksFEContainer(DockerImageName.parse(starRocksImage.getImageName()), id, isObserver);
         String scriptPath = new File(starRocksImage.getStarRocksHome(), "fe/bin/start_fe.sh").getAbsolutePath();
@@ -161,7 +208,7 @@ public class StarRocksCluster implements Closeable {
         return container;
     }
 
-    private StarRocksBEContainer createBEContainers(StarRocksImage starRocksImage, String id) {
+    private StarRocksBEContainer createBEContainer(StarRocksImage starRocksImage, String id) {
         StarRocksBEContainer container = new StarRocksBEContainer(DockerImageName.parse(starRocksImage.getImageName()), id);
         String scriptPath = new File(starRocksImage.getStarRocksHome(), "be/bin/start_be.sh").getAbsolutePath();
         container.withNetwork(network)
@@ -202,7 +249,7 @@ public class StarRocksCluster implements Closeable {
                         .waitUntilReady(helper);
                     break;
             } catch (Exception e) {
-                // throw exception if no receive correct response, otherwise retry
+                // throw exception if not receive normal response, otherwise retry
                 if (numFes.get() == -1) {
                     String errMsg = "Failed to wait for FEs to be ready";
                     LOG.error("{}", errMsg, e);
@@ -239,6 +286,7 @@ public class StarRocksCluster implements Closeable {
                 break;
             } catch (Exception e) {
                 if (numBes.get() == -1) {
+                    // throw exception if not receive normal response, otherwise retry
                     String errMsg = "Failed to wait for BEs to be ready";
                     LOG.error("{}", errMsg, e);
                     throw new StarRocksContainerException(errMsg, e);
@@ -294,7 +342,7 @@ public class StarRocksCluster implements Closeable {
     public static void main(String[] args) throws Exception {
         int numFeFollowers = 1;
         int numFeObservers = 0 ;
-        int numBes = 3;
+        int numBes = 0;
         if (args.length > 0) {
             numFeFollowers = Integer.parseInt(args[0]);
         }
@@ -310,12 +358,41 @@ public class StarRocksCluster implements Closeable {
         try (StarRocksCluster cluster =
                 new StarRocksCluster(numFeFollowers, numFeObservers, numBes)) {
             cluster.start();
+            System.out.println("JDBC URL: jdbc:mysql://" + cluster.getQueryUrls());
+            System.out.println("Load URL: " + cluster.getHttpUrls());
+            System.out.println("BE Mapping: " + cluster.getBeUrlMapping());
+
+            String createDbCmd = "CREATE DATABASE " + "starrocks_connector_it";
+            cluster.executeMysqlCommand(createDbCmd);
+
+            String createTable =
+                    "CREATE TABLE " + "starrocks_connector_it." + "sink_table" + " (" +
+                            "name STRING," +
+                            "score BIGINT," +
+                            "t DATETIME," +
+                            "a JSON," +
+                            "e ARRAY<JSON>," +
+                            "f ARRAY<STRING>," +
+                            "g ARRAY<DECIMALV2(2,1)>," +
+                            "h ARRAY<ARRAY<STRING>>," +
+                            "i JSON," +
+                            "j JSON," +
+                            "k JSON," +
+                            "d DATE" +
+                            ") ENGINE = OLAP " +
+                            "DUPLICATE KEY(name)" +
+                            "DISTRIBUTED BY HASH (name) BUCKETS 8";
+            cluster.executeMysqlCommand(createTable);
+
             try {
                 Thread.sleep(Long.MAX_VALUE);
             } catch (Exception e) {
                 // ignore
             }
             cluster.stop();
+        } catch (Exception e) {
+            LOG.error("Failed to run", e);
+            throw e;
         }
     }
 }
