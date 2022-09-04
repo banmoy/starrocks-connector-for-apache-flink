@@ -14,6 +14,7 @@
 
 package com.starrocks.connector.flink.table.sink;
 
+import com.google.common.base.Strings;
 import com.starrocks.connector.flink.connection.StarRocksJdbcConnectionOptions;
 import com.starrocks.connector.flink.connection.StarRocksJdbcConnectionProvider;
 import com.starrocks.connector.flink.manager.StarRocksQueryVisitor;
@@ -22,8 +23,6 @@ import com.starrocks.connector.flink.manager.StarRocksSinkManager;
 import com.starrocks.connector.flink.row.sink.StarRocksIRowTransformer;
 import com.starrocks.connector.flink.row.sink.StarRocksISerializer;
 import com.starrocks.connector.flink.row.sink.StarRocksSerializerFactory;
-
-import com.google.common.base.Strings;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.alter.Alter;
@@ -87,7 +86,7 @@ public class StarRocksDynamicSinkFunction<T> extends RichSinkFunction<T> impleme
     @Override
     public void open(Configuration parameters) throws Exception {
         super.open(parameters);
-        sinkManager.setRuntimeContext(getRuntimeContext());
+        sinkManager.setMetrics(getRuntimeContext().getMetricGroup());
         totalInvokeRows = getRuntimeContext().getMetricGroup().counter(COUNTER_INVOKE_ROWS);
         totalInvokeRowsTime = getRuntimeContext().getMetricGroup().counter(COUNTER_INVOKE_ROWS_COST_TIME);
         if (null != rowTransformer) {

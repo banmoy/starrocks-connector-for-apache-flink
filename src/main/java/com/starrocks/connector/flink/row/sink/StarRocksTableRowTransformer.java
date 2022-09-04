@@ -57,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 
 public class StarRocksTableRowTransformer implements StarRocksIRowTransformer<RowData> {
 
@@ -85,9 +86,16 @@ public class StarRocksTableRowTransformer implements StarRocksIRowTransformer<Ro
     }
 
     @Override
-    public void setRuntimeContext(RuntimeContext runtimeCtx) {
-        final TypeSerializer<RowData> typeSerializer = rowDataTypeInfo.createSerializer(runtimeCtx.getExecutionConfig());
-        valueTransform = runtimeCtx.getExecutionConfig().isObjectReuseEnabled() ? typeSerializer::copy : Function.identity();
+    public void setRuntimeContext(@Nullable RuntimeContext runtimeCtx) {
+        // TODO Whether the value should be copied even if the object reuse is enabled
+        if (runtimeCtx != null) {
+            final TypeSerializer<RowData> typeSerializer =
+                    rowDataTypeInfo.createSerializer(runtimeCtx.getExecutionConfig());
+            valueTransform =
+                    runtimeCtx.getExecutionConfig().isObjectReuseEnabled() ? typeSerializer::copy : Function.identity();
+        } else {
+            valueTransform = Function.identity();
+        }
         SerializeConfig.getGlobalInstance().put(BinaryStringData.class, new BinaryStringDataSerializer());
         SerializeConfig.getGlobalInstance().put(DecimalData.class, new DecimalDataSerializer());
         SerializeConfig.getGlobalInstance().put(TimestampData.class, new TimestampDataSerializer());

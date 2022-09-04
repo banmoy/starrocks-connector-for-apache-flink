@@ -69,6 +69,10 @@ public class StarRocksSinkBufferEntity implements Serializable {
         return label;
     }
 
+    public String getLabelPrefix() {
+        return labelPrefix;
+    }
+
     public ArrayList<byte[]> getBuffer() {
         return buffer;
     }
@@ -108,5 +112,24 @@ public class StarRocksSinkBufferEntity implements Serializable {
             sb.append(labelPrefix);
         }
         return sb.append(UUID.randomUUID().toString()).toString();
+    }
+
+    public static StarRocksSinkBufferEntity of(
+            ArrayList<byte[]> buffer,
+            int batchCount,
+            long batchSize,
+            String label,
+            String database,
+            String table,
+            boolean EOF,
+            String labelPrefix) {
+        StarRocksSinkBufferEntity entity = new StarRocksSinkBufferEntity(database, table, labelPrefix);
+        entity.buffer = buffer;
+        entity.batchCount = batchCount;
+        entity.batchSize = batchSize;
+        entity.label = label;
+        entity.EOF = EOF;
+
+        return entity;
     }
 }

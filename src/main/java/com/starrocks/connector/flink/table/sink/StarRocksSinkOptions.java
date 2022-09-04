@@ -77,6 +77,9 @@ public class StarRocksSinkOptions implements Serializable {
     public static final ConfigOption<Integer> SINK_METRIC_HISTOGRAM_WINDOW_SIZE = ConfigOptions.key("sink.metric.histogram-window-size")
         .intType().defaultValue(100).withDescription("Window size of histogram metrics.");
 
+    public static final ConfigOption<Boolean> SINK_USE_NEW_API = ConfigOptions.key("sink.use.new-api")
+            .booleanType().defaultValue(true).withDescription("Whether to use new sink api defined in FLIP-143.");
+
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
     // Sink semantic
@@ -170,6 +173,10 @@ public class StarRocksSinkOptions implements Serializable {
 
     public Integer getSinkParallelism() {
         return tableOptions.getOptional(SINK_PARALLELISM).orElse(null);
+    }
+
+    public boolean useNewApi() {
+        return tableOptions.get(SINK_USE_NEW_API);
     }
 
     public static Builder builder() {
