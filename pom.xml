@@ -83,6 +83,12 @@ limitations under the License.
             <version>${flink.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-base</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
         <!-- other -->
         <dependency>
             <groupId>com.google.guava</groupId>
@@ -307,6 +313,7 @@ limitations under the License.
                                     <include>com.fasterxml.jackson.core:jackson-annotations</include>
                                     <include>com.fasterxml.jackson.core:jackson-core</include>
                                     <include>com.fasterxml.jackson.core:jackson-databind</include>
+                                    <include>org.apache.flink:flink-connector-base</include>
                                 </includes>
                             </artifactSet>
                             <filters>

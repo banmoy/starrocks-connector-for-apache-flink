@@ -14,6 +14,7 @@
 
 package com.starrocks.connector.flink.table.source;
 
+import com.alibaba.fastjson.JSONObject;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
@@ -25,10 +26,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.alibaba.fastjson.JSONObject;
-
 public class StarRocksSourceOptions implements Serializable {
-
 
     private final ReadableConfig tableOptions;
     private final Map<String, String> tableOptionsMap;
@@ -88,7 +86,16 @@ public class StarRocksSourceOptions implements Serializable {
 
     public static final ConfigOption<String> SCAN_BE_HOST_MAPPING_LIST = ConfigOptions.key("scan.be-host-mapping-list")
             .stringType().defaultValue("").withDescription("List of be host mapping");
-    
+
+    public static final ConfigOption<Boolean> SCAN_USE_NEW_API = ConfigOptions.key("scan.use.new-api")
+            .booleanType().defaultValue(true).withDescription("Whether to use new source api defined in FLIP-27.");
+
+    public static final ConfigOption<Integer> SCAN_READER_QUEUE_CAPACITY =
+            ConfigOptions.key("scan.reader-queue.capacity")
+                    .intType()
+                    .defaultValue(2)
+                    .withDescription("The capacity of the element queue in the source reader.");
+
     // lookup Options
     public static final ConfigOption<Long> LOOKUP_CACHE_MAX_ROWS = ConfigOptions.key("lookup.cache.max-rows")
             .longType().defaultValue(-1L).withDescription(
@@ -222,6 +229,14 @@ public class StarRocksSourceOptions implements Serializable {
 
     public String getBeHostMappingList() {
         return tableOptions.get(SCAN_BE_HOST_MAPPING_LIST);
+    }
+
+    public int getScanReaderQueueCapacity() {
+        return tableOptions.get(SCAN_READER_QUEUE_CAPACITY);
+    }
+
+    public boolean useNewApi() {
+        return tableOptions.get(SCAN_USE_NEW_API);
     }
 
     public long getLookupCacheMaxRows() {

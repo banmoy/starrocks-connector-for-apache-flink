@@ -19,53 +19,46 @@ import com.starrocks.connector.flink.table.source.struct.ColunmRichInfo;
 import com.starrocks.connector.flink.table.source.struct.Const;
 import com.starrocks.connector.flink.table.source.struct.SelectColumn;
 import com.starrocks.connector.flink.table.source.struct.StarRocksSchema;
-import com.starrocks.thrift.TScanBatchResult;
 import com.starrocks.connector.flink.tools.DataUtil;
-
+import com.starrocks.thrift.TScanBatchResult;
 import org.apache.arrow.memory.RootAllocator;
-
-
 import org.apache.arrow.vector.FieldVector;
-
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowStreamReader;
 import org.apache.arrow.vector.types.Types;
-
 import org.apache.flink.table.data.GenericRowData;
-
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
-
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-public class StarRocksSourceFlinkRows {
+public class StarRocksSourceFlinkRows implements Iterator<GenericRowData> {
 
-    private static Logger LOG = LoggerFactory.getLogger(StarRocksSourceFlinkRows.class);
+    private static final Logger LOG = LoggerFactory.getLogger(StarRocksSourceFlinkRows.class);
+
+    public static final StarRocksSourceFlinkRows EOF = new StarRocksSourceFlinkRows();
+
     private int offsetOfBatchForRead;
     private int rowCountOfBatch;
     private int flinkRowsCount;
 
     private List<GenericRowData> sourceFlinkRows = new ArrayList<>();
-    private final ArrowStreamReader arrowStreamReader;
     private VectorSchemaRoot root;
     private ConcurrentHashMap<String, FieldVector> fieldVectorMap;
-    private RootAllocator rootAllocator;
-    private final List<ColunmRichInfo> colunmRichInfos;
-    private final SelectColumn[] selectedColumns;
-    private final StarRocksSchema starRocksSchema;
+    private ByteArrayInputStream byteArrayInputStream;
+    private List<ColunmRichInfo> colunmRichInfos;
+    private SelectColumn[] selectedColumns;
+    private StarRocksSchema starRocksSchema;
 
     public List<GenericRowData> getFlinkRows() {
         return sourceFlinkRows;
@@ -76,43 +69,45 @@ public class StarRocksSourceFlinkRows {
         this.colunmRichInfos = colunmRichInfos;
         this.selectedColumns = selectColumns;
         this.starRocksSchema = srSchema;
-        this.rootAllocator = new RootAllocator(Integer.MAX_VALUE);
         byte[] bytes = nextResult.getRows();
-        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
-        this.arrowStreamReader = new ArrowStreamReader(byteArrayInputStream, rootAllocator);
+        this.byteArrayInputStream = new ByteArrayInputStream(bytes);
         this.offsetOfBatchForRead = 0;
-        this.fieldVectorMap = new ConcurrentHashMap<String, FieldVector>();
+        this.fieldVectorMap = new ConcurrentHashMap<>();
+    }
+
+    /** Constructor for EOF. */
+    private StarRocksSourceFlinkRows() {
     }
 
     public StarRocksSourceFlinkRows genFlinkRowsFromArrow() throws IOException {
-        this.root = arrowStreamReader.getVectorSchemaRoot();
-        while (arrowStreamReader.loadNextBatch()) {
-            List<FieldVector> fieldVectors = root.getFieldVectors();
-            fieldVectors.parallelStream().forEach(vector -> {
-                fieldVectorMap.put(vector.getName(), vector);
-            });
-            if (fieldVectors.size() == 0 || root.getRowCount() == 0) {
-                continue;
+        try (RootAllocator rootAllocator = new RootAllocator(Integer.MAX_VALUE);
+                ArrowStreamReader arrowStreamReader = new ArrowStreamReader(byteArrayInputStream, rootAllocator)) {
+            this.root = arrowStreamReader.getVectorSchemaRoot();
+            while (arrowStreamReader.loadNextBatch()) {
+                List<FieldVector> fieldVectors = root.getFieldVectors();
+                fieldVectors.parallelStream().forEach(vector -> {
+                    fieldVectorMap.put(vector.getName(), vector);
+                });
+                if (fieldVectors.size() == 0 || root.getRowCount() == 0) {
+                    continue;
+                }
+                rowCountOfBatch = root.getRowCount();
+                for (int i = 0; i < rowCountOfBatch; i++) {
+                    sourceFlinkRows.add(new GenericRowData(this.selectedColumns.length));
+                }
+                this.genFlinkRows();
+                flinkRowsCount += root.getRowCount();
             }
-            rowCountOfBatch = root.getRowCount();
-            for (int i = 0; i < rowCountOfBatch; i ++) {
-                sourceFlinkRows.add(new GenericRowData(this.selectedColumns.length));
-            }
-            this.genFlinkRows();
-            flinkRowsCount += root.getRowCount();
+            return this;
         }
-        return this;
     }
 
+    @Override
     public boolean hasNext() {
-        if (offsetOfBatchForRead < flinkRowsCount) {
-            return true;
-        }
-        this.close();
-        return false;
+        return offsetOfBatchForRead < flinkRowsCount;
     }
 
-
+    @Override
     public GenericRowData next() {
         if (!hasNext()) {
             LOG.error("offset larger than flinksRowsCount");
@@ -123,20 +118,6 @@ public class StarRocksSourceFlinkRows {
 
     public int getReadRowCount() {
         return flinkRowsCount;
-    }
-
-    private void close() {
-        try {
-            if (arrowStreamReader != null) {
-                arrowStreamReader.close();
-            }
-            if (rootAllocator != null) {
-                rootAllocator.close();
-            }
-        } catch (IOException e) {
-            LOG.error("Failed to close StarRocksSourceFlinkRows:" + e.getMessage());
-            throw new RuntimeException("Failed to close StarRocksSourceFlinkRows:" + e.getMessage());
-        }
     }
     
     private void setValueToFlinkRows(int rowIndex, int colunm, Object obj) {

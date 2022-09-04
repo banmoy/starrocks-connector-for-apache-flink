@@ -14,6 +14,7 @@
 
 package com.starrocks.connector.flink.table.source;
 
+import com.starrocks.connector.flink.table.source.struct.PushDownHolder;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.TableSchema;
@@ -24,8 +25,6 @@ import org.apache.flink.table.utils.TableSchemaUtils;
 
 import java.util.HashSet;
 import java.util.Set;
-
-import com.starrocks.connector.flink.table.source.struct.PushDownHolder;
 
 
 public final class StarRocksDynamicTableSourceFactory implements DynamicTableSourceFactory {
@@ -72,6 +71,8 @@ public final class StarRocksDynamicTableSourceFactory implements DynamicTableSou
         options.add(StarRocksSourceOptions.SCAN_MEM_LIMIT);
         options.add(StarRocksSourceOptions.SCAN_MAX_RETRIES);
         options.add(StarRocksSourceOptions.SCAN_BE_HOST_MAPPING_LIST);
+        options.add(StarRocksSourceOptions.SCAN_USE_NEW_API);
+        options.add(StarRocksSourceOptions.SCAN_READER_QUEUE_CAPACITY);
         options.add(StarRocksSourceOptions.LOOKUP_CACHE_TTL_MS);
         options.add(StarRocksSourceOptions.LOOKUP_CACHE_MAX_ROWS);
         options.add(StarRocksSourceOptions.LOOKUP_MAX_RETRIES);

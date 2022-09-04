@@ -17,7 +17,6 @@ package com.starrocks.connector.flink.table.source;
 import com.starrocks.connector.flink.table.source.struct.ColunmRichInfo;
 import com.starrocks.connector.flink.table.source.struct.PushDownHolder;
 import com.starrocks.connector.flink.table.source.struct.SelectColumn;
-
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.connector.ChangelogMode;
@@ -25,6 +24,7 @@ import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.LookupTableSource;
 import org.apache.flink.table.connector.source.ScanTableSource;
 import org.apache.flink.table.connector.source.SourceFunctionProvider;
+import org.apache.flink.table.connector.source.SourceProvider;
 import org.apache.flink.table.connector.source.TableFunctionProvider;
 import org.apache.flink.table.connector.source.abilities.SupportsFilterPushDown;
 import org.apache.flink.table.connector.source.abilities.SupportsLimitPushDown;
@@ -57,14 +57,25 @@ public class StarRocksDynamicTableSource implements ScanTableSource, LookupTable
 
     @Override
     public ScanRuntimeProvider getScanRuntimeProvider(ScanContext scanContext) {
-        StarRocksDynamicSourceFunction sourceFunction = new StarRocksDynamicSourceFunction(
-            options, flinkSchema, 
-            this.pushDownHolder.getFilter(), 
-            this.pushDownHolder.getLimit(), 
-            this.pushDownHolder.getSelectColumns(), 
-            this.pushDownHolder.getColumns(), 
-            this.pushDownHolder.getQueryType());
-        return SourceFunctionProvider.of(sourceFunction, true);
+        if (options.useNewApi()) {
+            StarRocksNewSource source = new StarRocksNewSource(
+                    options, flinkSchema,
+                    this.pushDownHolder.getFilter(),
+                    this.pushDownHolder.getLimit(),
+                    this.pushDownHolder.getSelectColumns(),
+                    this.pushDownHolder.getColumns(),
+                    this.pushDownHolder.getQueryType());
+            return SourceProvider.of(source);
+        } else {
+            StarRocksDynamicSourceFunction sourceFunction = new StarRocksDynamicSourceFunction(
+                    options, flinkSchema,
+                    this.pushDownHolder.getFilter(),
+                    this.pushDownHolder.getLimit(),
+                    this.pushDownHolder.getSelectColumns(),
+                    this.pushDownHolder.getColumns(),
+                    this.pushDownHolder.getQueryType());
+            return SourceFunctionProvider.of(sourceFunction, true);
+        }
     }
 
     @Override
