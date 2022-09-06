@@ -35,6 +35,7 @@ import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.Nullable;
 
@@ -171,6 +172,31 @@ public class StarRocksCluster implements Closeable {
 
         LOG.info("Successful to start the cluster");
     }
+
+    /**
+     * Restart all FEs and BEs, and return a future to indicate
+     * whether the cluster is ready.
+     */
+    public CompletableFuture<Boolean> restartCluster() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Restart all FEs, and return a future to indicate whether
+     * the FEs are restarted, and ready to serve requests.
+     */
+    public CompletableFuture<Boolean> restartAllFe() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Restart all BEs, and return a future to indicate whether
+     * the BEs are restarted, and ready to serve requests.
+     */
+    public CompletableFuture<Boolean> restartAllBe() {
+        throw new UnsupportedOperationException();
+    }
+
 
     public void stop() {
         LOG.info("Stop the cluster");

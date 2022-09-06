@@ -56,7 +56,7 @@ public class StarRocksITITCase extends StarRocksITTestBase {
     @Test
     public void testSink() {
         StarRocksSinkOptions sinkOptions = StarRocksSinkOptions.builder()
-                .withProperty("jdbc-url", "jdbc:mysql://" + STARROCKS_CLUSTER.getQueryUrls())
+                .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("load-url", STARROCKS_CLUSTER.getHttpUrls())
                 .withProperty("database-name", DB_NAME)
                 .withProperty("table-name", "sink_table")
@@ -125,7 +125,7 @@ public class StarRocksITITCase extends StarRocksITTestBase {
     public void testSource() {
         StarRocksSourceOptions options = StarRocksSourceOptions.builder()
                 .withProperty("scan-url", STARROCKS_CLUSTER.getHttpUrls())
-                .withProperty("jdbc-url", "jdbc:mysql://" + STARROCKS_CLUSTER.getQueryUrls())
+                .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("username", "root")
                 .withProperty("password", "")
                 .withProperty("database-name", DB_NAME)
@@ -200,7 +200,7 @@ public class StarRocksITITCase extends StarRocksITTestBase {
     public void testLookup() {
         StarRocksSourceOptions options = StarRocksSourceOptions.builder()
                 .withProperty("scan-url", STARROCKS_CLUSTER.getHttpUrls())
-                .withProperty("jdbc-url", "jdbc:mysql://" + STARROCKS_CLUSTER.getQueryUrls())
+                .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("username", "root")
                 .withProperty("password", "")
                 .withProperty("database-name", DB_NAME)
