@@ -56,7 +56,7 @@ public abstract class StarRocksITTestBase {
         }
 
         try {
-            DB_CONNECTION = DriverManager.getConnection(getJdbcUrl());
+            DB_CONNECTION = DriverManager.getConnection(getJdbcUrl(), "root", "");
             LOG.info("Success to create db connection via jdbc {}", getJdbcUrl());
         } catch (Exception e) {
             LOG.error("Failed to create db connection via jdbc {}", getJdbcUrl(), e);
@@ -96,9 +96,8 @@ public abstract class StarRocksITTestBase {
      *             );
      */
     public static void verifyResult(Row[] expectedData, String dbName, String tableName) throws SQLException {
-        try (Connection dbConn = DriverManager.getConnection(getJdbcUrl());
-                PreparedStatement statement = dbConn.prepareStatement(
-                        String.format("select * from %s.%s", dbName, tableName));
+        try (PreparedStatement statement = DB_CONNECTION.prepareStatement(
+                String.format("select * from %s.%s", dbName, tableName));
                 ResultSet resultSet = statement.executeQuery()) {
             int rowCount = 0;
             int columnCount = resultSet.getMetaData().getColumnCount();

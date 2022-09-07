@@ -20,6 +20,7 @@ import com.google.common.io.BaseEncoding;
 import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.Container;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
@@ -34,8 +35,11 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.Nullable;
 
@@ -57,6 +61,11 @@ public class StarRocksCluster implements Closeable {
     private final List<StarRocksFEContainer> feFollowers;
     private final List<StarRocksFEContainer> feObservers;
     private final List<StarRocksBEContainer> bes;
+    private final OperationManager operationManager;
+
+    /** Lazily initialized when starting cluster. */
+    @Nullable
+    private StarRocksImage starRocksImage;
 
     public StarRocksCluster(int numFeFollowers, int numFeObservers, int numBes) {
         this(numFeFollowers, numFeObservers, numBes, StarRocksImageBuilder.DEFAULT_STARROCKS_VERSION);
@@ -75,6 +84,7 @@ public class StarRocksCluster implements Closeable {
         this.feFollowers = new ArrayList<>();
         this.feObservers = new ArrayList<>();
         this.bes = new ArrayList<>();
+        this.operationManager = new OperationManager();
     }
 
     public String getQueryUrls() {
@@ -127,7 +137,7 @@ public class StarRocksCluster implements Closeable {
 
     public void start() throws Exception {
         LOG.info("Start to build the image for StarRocks {} ......", starRocksVersion);
-        StarRocksImage starRocksImage = new StarRocksImageBuilder()
+        this.starRocksImage = new StarRocksImageBuilder()
                                             .setStarRocksVersion(starRocksVersion)
                                             .setDeleteOnExit(false)
                                             .build();
@@ -136,14 +146,12 @@ public class StarRocksCluster implements Closeable {
                 numFeFollowers, numFeObservers, numBes);
         // 1. create FE follower, FE observer, and BE containers
         for (int i = 0; i < numFeFollowers; i++) {
-            // select the first FE as the helper
-            StarRocksFEContainer feHelper = i == 0 ? null : feFollowers.get(0);
-            StarRocksFEContainer follower = createFEContainer(starRocksImage, feHelper, false, "fe-follower-" + i);
+            StarRocksFEContainer follower = createFEContainer(starRocksImage, false, "fe-follower-" + i);
             feFollowers.add(follower);
         }
 
         for (int i = 0; i < numFeObservers; i++) {
-            StarRocksFEContainer observer = createFEContainer(starRocksImage, feFollowers.get(0), true, "fe-observer-" + i);
+            StarRocksFEContainer observer = createFEContainer(starRocksImage, true, "fe-observer-" + i);
             feObservers.add(observer);
         }
 
@@ -156,8 +164,12 @@ public class StarRocksCluster implements Closeable {
         List<StarRocksContainer<?>> containers = new ArrayList<>();
         containers.addAll(feFollowers);
         containers.addAll(feObservers);
+        containers.parallelStream().forEach(
+                container -> startFeContainer((StarRocksFEContainer) container, feFollowers.get(0)));
+
+        bes.parallelStream().forEach(this::startBeContainer);
+
         containers.addAll(bes);
-        containers.parallelStream().forEach(StarRocksContainer::start);
         containers.parallelStream().forEach(container -> container.waitUntilReachable(DEFAULT_CONTAINER_START_TIMEOUT));
 
         // 3. add all components to the cluster via the FE helper
@@ -170,6 +182,8 @@ public class StarRocksCluster implements Closeable {
         waitUntilFEReady(helper);
         waitUntilBEReady(helper);
 
+        operationManager.start();
+
         LOG.info("Successful to start the cluster");
     }
 
@@ -178,7 +192,14 @@ public class StarRocksCluster implements Closeable {
      * whether the cluster is ready.
      */
     public CompletableFuture<Boolean> restartCluster() {
-        throw new UnsupportedOperationException();
+        RestartAllFeOperation restartAllFeOperation = new RestartAllFeOperation(feFollowers, feObservers);
+        RestartAllBeOperation restartAllBeOperation = new RestartAllBeOperation(bes, feFollowers.get(0));
+
+        OperationManager.ComposedOperation operation = new OperationManager.ComposedOperation(
+                OperationManager.OperationType.RESTART_CLUSTER,
+                Arrays.asList(restartAllFeOperation, restartAllBeOperation));
+        operationManager.addOperation(operation);
+        return operation.getFuture();
     }
 
     /**
@@ -186,7 +207,9 @@ public class StarRocksCluster implements Closeable {
      * the FEs are restarted, and ready to serve requests.
      */
     public CompletableFuture<Boolean> restartAllFe() {
-        throw new UnsupportedOperationException();
+        RestartAllFeOperation operation = new RestartAllFeOperation(feFollowers, feObservers);
+        operationManager.addOperation(operation);
+        return operation.getFuture();
     }
 
     /**
@@ -194,7 +217,9 @@ public class StarRocksCluster implements Closeable {
      * the BEs are restarted, and ready to serve requests.
      */
     public CompletableFuture<Boolean> restartAllBe() {
-        throw new UnsupportedOperationException();
+        RestartAllBeOperation operation = new RestartAllBeOperation(bes, feFollowers.get(0));
+        operationManager.addOperation(operation);
+        return operation.getFuture();
     }
 
 
@@ -214,12 +239,8 @@ public class StarRocksCluster implements Closeable {
         network.close();
     }
 
-    private StarRocksFEContainer createFEContainer(
-            StarRocksImage starRocksImage, @Nullable StarRocksFEContainer helper, boolean isObserver, String id) {
+    private StarRocksFEContainer createFEContainer(StarRocksImage starRocksImage, boolean isObserver, String id) {
         StarRocksFEContainer container = new StarRocksFEContainer(DockerImageName.parse(starRocksImage.getImageName()), id, isObserver);
-        String scriptPath = new File(starRocksImage.getStarRocksHome(), "fe/bin/start_fe.sh").getAbsolutePath();
-        String helperCmd = helper == null ? "" : String.format("--helper %s:%s", helper.getId(), StarRocksFEContainer.EDIT_LOG_PORT);
-
         container.withNetwork(network)
                 .withNetworkAliases(id)
                 .withExposedPorts(
@@ -228,15 +249,35 @@ public class StarRocksCluster implements Closeable {
                         StarRocksFEContainer.QUERY_PORT,
                         StarRocksFEContainer.EDIT_LOG_PORT)
                 .withEnv("JAVA_HOME", "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.342.b07-1.el7_9.x86_64")
-                .withCommand("/bin/bash", "-c", scriptPath, helperCmd)
-                .withLogConsumer(new Slf4jLogConsumer(StarRocksFEContainer.LOG).withPrefix(id));
+                .withCommand("/bin/bash", "-c", "sleep infinity")
+                .withLogConsumer(new Slf4jLogConsumer(StarRocksFEContainer.LOG).withPrefix(id))
+                // TODO set proper strategy
+                .setWaitStrategy(null);
         LOG.info("Create FE container {}", id);
         return container;
     }
 
+    private void startFeContainer(StarRocksFEContainer container, StarRocksFEContainer helper) {
+        String scriptPath = new File(starRocksImage.getStarRocksHome(), "fe/bin/start_fe.sh --daemon").getAbsolutePath();
+        String helperCmd = container == helper ? "" : String.format("--helper %s:%s", helper.getId(), StarRocksFEContainer.EDIT_LOG_PORT);
+
+        try {
+            LOG.info("Starting FE container {}", container.getId());
+            container.start();
+            Container.ExecResult result = container.execInContainer("/bin/bash", "-c", scriptPath, helperCmd);
+            if (result.getExitCode() != 0) {
+                String errMsg = String.format("Failed to start FE in container %s, %s", container.getId(), result);
+                throw new Exception(errMsg);
+            }
+        } catch (Exception e) {
+            String errMsg = "Failed to start FE container {}" + container.getId();
+            LOG.error("{}", errMsg, e);
+            throw new StarRocksContainerException(errMsg, e);
+        }
+    }
+
     private StarRocksBEContainer createBEContainer(StarRocksImage starRocksImage, String id) {
         StarRocksBEContainer container = new StarRocksBEContainer(DockerImageName.parse(starRocksImage.getImageName()), id);
-        String scriptPath = new File(starRocksImage.getStarRocksHome(), "be/bin/start_be.sh").getAbsolutePath();
         container.withNetwork(network)
                 .withNetworkAliases(id)
                 .withExposedPorts(
@@ -245,10 +286,29 @@ public class StarRocksCluster implements Closeable {
                         StarRocksBEContainer.HEARBEAT_SERVICE_PORT,
                         StarRocksBEContainer.BRPC_PORT)
                 .withEnv("JAVA_HOME", "/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.342.b07-1.el7_9.x86_64")
-                .withCommand("/bin/bash", "-c", scriptPath)
-                .withLogConsumer(new Slf4jLogConsumer(StarRocksBEContainer.LOG).withPrefix(id));
+                .withCommand("/bin/bash", "-c", "sleep infinity")
+                .withLogConsumer(new Slf4jLogConsumer(StarRocksBEContainer.LOG).withPrefix(id))
+                // TODO set proper strategy
+                .setWaitStrategy(null);
         LOG.info("Create BE container {}", id);
         return container;
+    }
+
+    private void startBeContainer(StarRocksBEContainer container) {
+        String scriptPath = new File(starRocksImage.getStarRocksHome(), "be/bin/start_be.sh  --daemon").getAbsolutePath();
+        try {
+            LOG.info("Starting BE container {}", container.getId());
+            container.start();
+            Container.ExecResult result = container.execInContainer("/bin/bash", "-c", scriptPath);
+            if (result.getExitCode() != 0) {
+                String errMsg = String.format("Failed to start BE in container %s, %s", container.getId(), result);
+                throw new Exception(errMsg);
+            }
+        } catch (Exception e) {
+            String errMsg = "Failed to start BE container {}" + container.getId();
+            LOG.error("{}", errMsg, e);
+            throw new StarRocksContainerException(errMsg, e);
+        }
     }
 
     private void waitUntilFEReady(StarRocksFEContainer helper) {
@@ -327,6 +387,124 @@ public class StarRocksCluster implements Closeable {
         }
     }
 
+    private class RestartAllFeOperation extends OperationManager.Operation {
+
+        private final List<StarRocksFEContainer> followers;
+        private final List<StarRocksFEContainer> observers;
+
+        public RestartAllFeOperation(List<StarRocksFEContainer> followers, List<StarRocksFEContainer> observers) {
+            super(OperationManager.OperationType.RESTART_ALL_FE);
+            this.followers = followers;
+            this.observers = observers;
+        }
+
+        @Override
+        public void run() throws Exception {
+            String stopScriptPath = new File(starRocksImage.getStarRocksHome(), "fe/bin/stop_fe.sh").getAbsolutePath();
+            for (StarRocksFEContainer container : followers) {
+                Container.ExecResult result = container.execInContainer("/bin/bash", "-c", stopScriptPath);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to stop the FE follower (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Stop the FE follower {}/{}", container.getId(), container.getContainerId());
+            }
+
+            for (StarRocksFEContainer container : observers) {
+                Container.ExecResult result = container.execInContainer("/bin/bash", "-c", stopScriptPath);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to stop the FE observer (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Stop the FE observer {}/{}", container.getId(), container.getContainerId());
+            }
+
+
+            StarRocksFEContainer helper = feFollowers.get(0);
+            String startScriptPath = new File(starRocksImage.getStarRocksHome(), "fe/bin/start_fe.sh --daemon").getAbsolutePath();
+            String helperCmd = String.format("--helper %s:%s", helper.getId(), StarRocksFEContainer.EDIT_LOG_PORT);
+
+            for (StarRocksFEContainer container : followers) {
+                Container.ExecResult result = container == helper
+                        ? container.execInContainer("/bin/bash", "-c", startScriptPath)
+                        : container.execInContainer("/bin/bash", "-c", startScriptPath, helperCmd);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to restart the FE follower (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Restart the FE follower {}/{}", container.getId(), container.getContainerId());
+            }
+
+            for (StarRocksFEContainer container : observers) {
+                Container.ExecResult result = container.execInContainer("/bin/bash", "-c", startScriptPath, helperCmd);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to restart the FE observer (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Restart the FE observer {}/{}", container.getId(), container.getContainerId());
+            }
+        }
+
+        @Override
+        public boolean verifyOperationResult() {
+            waitUntilFEReady(followers.get(0));
+            return true;
+        }
+    }
+
+    private class RestartAllBeOperation extends OperationManager.Operation {
+
+        private final List<StarRocksBEContainer> containers;
+        private final StarRocksFEContainer helper;
+
+        public RestartAllBeOperation(List<StarRocksBEContainer> containers, StarRocksFEContainer helper) {
+            super(OperationManager.OperationType.RESTART_ALL_BE);
+            this.containers = containers;
+            this.helper = helper;
+        }
+
+        @Override
+        public void run() throws Exception {
+            String stopScriptPath = new File(starRocksImage.getStarRocksHome(), "be/bin/stop_be.sh").getAbsolutePath();
+            for (StarRocksBEContainer container : containers) {
+                Container.ExecResult result = container.execInContainer("/bin/bash", "-c", stopScriptPath);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to stop the BE (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Stop the BE {}/{}", container.getId(), container.getContainerId());
+            }
+
+            String startScriptPath = new File(starRocksImage.getStarRocksHome(), "be/bin/start_be.sh --daemon").getAbsolutePath();
+            for (StarRocksBEContainer container : containers) {
+                Container.ExecResult result = container.execInContainer("/bin/bash", "-c", startScriptPath);
+                if (result.getExitCode() != 0) {
+                    String errMsg = String.format("Failed to restart the BE (%s/%s), %s",
+                            container.getId(), container.getContainerId(), result);
+                    LOG.error("{}", errMsg);
+                    throw new StarRocksContainerException(errMsg);
+                }
+                LOG.info("Restart the BE {}/{}", container.getId(), container.getContainerId());
+            }
+        }
+
+        @Override
+        public boolean verifyOperationResult() {
+            waitUntilBEReady(helper);
+            return true;
+        }
+    }
+
     private static String buildAuthString(String username, String password) {
         return "Basic" + BaseEncoding.base64().encode((username + ":" + password).getBytes());
     }
@@ -384,36 +562,67 @@ public class StarRocksCluster implements Closeable {
         try (StarRocksCluster cluster =
                 new StarRocksCluster(numFeFollowers, numFeObservers, numBes)) {
             cluster.start();
+
             System.out.println("JDBC URL: jdbc:mysql://" + cluster.getQueryUrls());
             System.out.println("Load URL: " + cluster.getHttpUrls());
             System.out.println("BE Mapping: " + cluster.getBeUrlMapping());
 
-            String createDbCmd = "CREATE DATABASE " + "starrocks_connector_it";
-            cluster.executeMysqlCommand(createDbCmd);
+            try (Scanner scanner = new Scanner(System.in)) {
+                while (true) {
+                    System.out.println("Please input command:");
+                    String input = scanner.nextLine();
+                    if ("eof".equals(input)) {
+                        break;
+                    } else if ("create_table".equals(input)) {
+                        String createDbCmd = "CREATE DATABASE " + "starrocks_connector_it";
+                        cluster.executeMysqlCommand(createDbCmd);
 
-            String createTable =
-                    "CREATE TABLE " + "starrocks_connector_it." + "sink_table" + " (" +
-                            "name STRING," +
-                            "score BIGINT," +
-                            "t DATETIME," +
-                            "a JSON," +
-                            "e ARRAY<JSON>," +
-                            "f ARRAY<STRING>," +
-                            "g ARRAY<DECIMALV2(2,1)>," +
-                            "h ARRAY<ARRAY<STRING>>," +
-                            "i JSON," +
-                            "j JSON," +
-                            "k JSON," +
-                            "d DATE" +
-                            ") ENGINE = OLAP " +
-                            "DUPLICATE KEY(name)" +
-                            "DISTRIBUTED BY HASH (name) BUCKETS 8";
-            cluster.executeMysqlCommand(createTable);
-
-            try {
-                Thread.sleep(Long.MAX_VALUE);
-            } catch (Exception e) {
-                // ignore
+                        String createTable =
+                                "CREATE TABLE " + "starrocks_connector_it." + "sink_table" + " (" +
+                                        "name STRING," +
+                                        "score BIGINT," +
+                                        "t DATETIME," +
+                                        "a JSON," +
+                                        "e ARRAY<JSON>," +
+                                        "f ARRAY<STRING>," +
+                                        "g ARRAY<DECIMALV2(2,1)>," +
+                                        "h ARRAY<ARRAY<STRING>>," +
+                                        "i JSON," +
+                                        "j JSON," +
+                                        "k JSON," +
+                                        "d DATE" +
+                                        ") ENGINE = OLAP " +
+                                        "DUPLICATE KEY(name)" +
+                                        "DISTRIBUTED BY HASH (name) BUCKETS 8";
+                        cluster.executeMysqlCommand(createTable);
+                    } else if ("restart_fes".equals(input)) {
+                        CompletableFuture<Boolean> future = cluster.restartAllFe();
+                        try {
+                            future.get(2, TimeUnit.MINUTES);
+                        } catch (Exception e) {
+                            System.out.println("Failed to " + input);
+                            e.printStackTrace();
+                        }
+                    } else if ("restart_bes".equals(input)) {
+                        CompletableFuture<Boolean> future = cluster.restartAllBe();
+                        try {
+                            future.get(2, TimeUnit.MINUTES);
+                        } catch (Exception e) {
+                            System.out.println("Failed to " + input);
+                            e.printStackTrace();
+                        }
+                    } else if ("restart_cluster".equals(input)) {
+                        CompletableFuture<Boolean> future = cluster.restartCluster();
+                        try {
+                            future.get(2, TimeUnit.MINUTES);
+                        } catch (Exception e) {
+                            System.out.println("Failed to " + input);
+                            e.printStackTrace();
+                        }
+                    } else {
+                        System.out.println("Unknown command " + input);
+                    }
+                }
             }
             cluster.stop();
         } catch (Exception e) {
