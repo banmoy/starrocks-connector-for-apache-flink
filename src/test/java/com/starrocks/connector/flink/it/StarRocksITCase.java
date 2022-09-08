@@ -136,8 +136,8 @@ public class StarRocksITCase extends StarRocksITTestBase {
                 "CREATE TABLE " + String.join(".", DB_NAME, options.getTableName()) + " (" +
                             "date_1 DATE," +
                             "datetime_1 DATETIME,"+
-                            "char_1 STRING,"+
-                            "varchar_1 STRING,"+
+                            "char_1 CHAR(3),"+
+                            "varchar_1 VARCHAR(10),"+
                             "boolean_1 BOOLEAN,"+
                             "tinyint_1 TINYINT,"+
                             "smallint_1 SMALLINT,"+
@@ -152,7 +152,7 @@ public class StarRocksITCase extends StarRocksITTestBase {
 
         String inserIntoData =
                 "INSERT INTO " + String.join(".", DB_NAME, options.getTableName()) + " " +
-                        "WITH LABEL starrocks_lookup_test VALUES" +
+                        "WITH LABEL starrocks_source_test VALUES" +
                         "('2022-09-01', '2022-09-01 21:28:30', 'c11', 'vc11', 0, 125, -32000, 600000, 9232322, 1.2, 2.23)," +
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);
@@ -165,8 +165,8 @@ public class StarRocksITCase extends StarRocksITTestBase {
                 "CREATE TABLE flink_type_test (" +
                             "date_1 DATE," +
                             "datetime_1 TIMESTAMP(6),"+
-                            "char_1 CHAR(20),"+
-                            "varchar_1 VARCHAR,"+
+                            "char_1 CHAR(3),"+
+                            "varchar_1 VARCHAR(10),"+
                             "boolean_1 BOOLEAN,"+
                             "tinyint_1 TINYINT,"+
                             "smallint_1 SMALLINT,"+
@@ -211,8 +211,8 @@ public class StarRocksITCase extends StarRocksITTestBase {
                 "CREATE TABLE " + String.join(".", DB_NAME, options.getTableName()) + " (" +
                         "date_1 DATE," +
                         "datetime_1 DATETIME,"+
-                        "char_1 STRING,"+
-                        "varchar_1 STRING,"+
+                        "char_1 CHAR(3),"+
+                        "varchar_1 VARCHAR(10),"+
                         "boolean_1 BOOLEAN,"+
                         "tinyint_1 TINYINT,"+
                         "smallint_1 SMALLINT,"+
@@ -227,7 +227,7 @@ public class StarRocksITCase extends StarRocksITTestBase {
 
         String inserIntoData =
                 "INSERT INTO " + String.join(".", DB_NAME, options.getTableName()) + " " +
-                        "WITH LABEL starrocks_source_test VALUES" +
+                        "WITH LABEL starrocks_lookup_test VALUES" +
                         "('2022-09-01', '2022-09-01 21:28:30', 'c11', 'vc11', 0, 125, -32000, 600000, 9232322, 1.2, 2.23)," +
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);
@@ -253,8 +253,8 @@ public class StarRocksITCase extends StarRocksITTestBase {
                     "CREATE TABLE flink_type_test (" +
                                 "date_1 DATE," +
                                 "datetime_1 TIMESTAMP(6),"+
-                                "char_1 CHAR(20),"+
-                                "varchar_1 VARCHAR,"+
+                                "char_1 CHAR(3),"+
+                                "varchar_1 VARCHAR(10),"+
                                 "boolean_1 BOOLEAN,"+
                                 "tinyint_1 TINYINT,"+
                                 "smallint_1 SMALLINT,"+
