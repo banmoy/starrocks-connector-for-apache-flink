@@ -24,6 +24,7 @@ import com.starrocks.connector.flink.table.source.StarRocksSourceOptions;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.Table;
@@ -82,7 +83,9 @@ public class StarRocksITCase extends StarRocksITTestBase {
                  "DISTRIBUTED BY HASH (name) BUCKETS 8";
         STARROCKS_CLUSTER.executeMysqlCommand(createTable);
 
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        Configuration conf = new Configuration();
+        conf.setBoolean("classloader.check-leaked-classloader", false);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         env.setParallelism(1);
         StreamTableEnvironment tEnv;
         tEnv = StreamTableEnvironment.create(env);
@@ -157,7 +160,9 @@ public class StarRocksITCase extends StarRocksITTestBase {
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);
 
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        Configuration conf = new Configuration();
+        conf.setBoolean("classloader.check-leaked-classloader", false);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         env.setParallelism(1);
         StreamTableEnvironment tEnv;
         tEnv = StreamTableEnvironment.create(env);
@@ -232,7 +237,9 @@ public class StarRocksITCase extends StarRocksITTestBase {
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);
 
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        Configuration conf = new Configuration();
+        conf.setBoolean("classloader.check-leaked-classloader", false);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         env.setParallelism(1);
         StreamTableEnvironment tEnv;
         tEnv = StreamTableEnvironment.create(env);
