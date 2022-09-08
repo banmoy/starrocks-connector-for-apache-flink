@@ -184,7 +184,9 @@ public class StarRocksCluster implements Closeable {
 
         operationManager.start();
 
-        LOG.info("Successful to start the cluster");
+        LOG.info("Successful to start the cluster, FE http urls on host: {}, " +
+                    "FE query urls on host: {}, BE ports mapping on host: {}",
+                        getHttpUrls(), getQueryUrls(), getBeUrlMapping());
     }
 
     /**
@@ -546,7 +548,7 @@ public class StarRocksCluster implements Closeable {
     public static void main(String[] args) throws Exception {
         int numFeFollowers = 1;
         int numFeObservers = 0 ;
-        int numBes = 0;
+        int numBes = 3;
         if (args.length > 0) {
             numFeFollowers = Integer.parseInt(args[0]);
         }

@@ -41,8 +41,11 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.Nullable;
 
 /** StarRocks source reader. */
 public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSplit> {
@@ -53,20 +56,24 @@ public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSpl
 
     private final StarRocksSourceOptions sourceOptions;
     private final QueryInfo queryInfo;
-    private final long dataCount;
+    private final Long dataCount;
     private final SelectColumn[] selectColumns;
     private final List<ColunmRichInfo> colunmRichInfos;
     private final StarRocksSourceQueryType queryType;
     private final SourceReaderContext readerContext;
-    private final CompletableFuture<StarRocksSourceEvent> sourceEventFuture;
+    private final CompletableFuture<Void> sourceEventFuture;
     private final List<StarRocksSourceBeBatchReader> dataReaderList;
     private final FutureCompletingBlockingQueue<RowBatch> flinkRowsQueue;
     private final AtomicInteger numFinishedReader;
     private final AtomicReference<Throwable> exception;
+
+    // Lazily initialized
+    @Nullable
+    private ExecutorService executorService;
     private RowBatch rowBatch;
     private Counter counterTotalScannedRows;
 
-    public StarRocksSourceReader(StarRocksSourceOptions sourceOptions, QueryInfo queryInfo, long dataCount,
+    public StarRocksSourceReader(StarRocksSourceOptions sourceOptions, QueryInfo queryInfo, Long dataCount,
                                  SelectColumn[] selectColumns, List<ColunmRichInfo> colunmRichInfos,
                                  StarRocksSourceQueryType queryType, SourceReaderContext readerContext) {
         this.sourceOptions = sourceOptions;
@@ -81,19 +88,84 @@ public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSpl
         this.flinkRowsQueue = new FutureCompletingBlockingQueue<>(sourceOptions.getScanReaderQueueCapacity());
         this.numFinishedReader = new AtomicInteger();
         this.exception = new AtomicReference<>();
+        LOG.info("Create source reader {}", readerContext.getIndexOfSubtask());
     }
 
     @Override
     public void start() {
+        LOG.info("Start source reader {}", readerContext.getIndexOfSubtask());
         this.counterTotalScannedRows = readerContext.metricGroup().counter(TOTAL_SCANNED_ROWS);
-        if (this.queryType == StarRocksSourceQueryType.QueryCount) {
-            startQueryCountReader();
-        } else {
-            startNonQueryCountReader();
+    }
+
+    @Override
+    public InputStatus pollNext(ReaderOutput<RowData> output) throws Exception {
+        checkException();
+        if (rowBatch == null || !rowBatch.hasNext()) {
+            rowBatch = flinkRowsQueue.poll();
+            if (rowBatch == RowBatch.EOF) {
+                return InputStatus.END_OF_INPUT;
+            }
+        }
+
+        if (rowBatch != null && rowBatch.hasNext()) {
+            output.collect(rowBatch.next());
+            counterTotalScannedRows.inc(1);
+            return InputStatus.MORE_AVAILABLE;
+        }
+
+        return InputStatus.NOTHING_AVAILABLE;
+    }
+
+    @Override
+    public CompletableFuture<Void> isAvailable() {
+        checkException();
+        return !sourceEventFuture.isDone() ? sourceEventFuture :
+                (rowBatch != null
+                    ? FutureCompletingBlockingQueue.AVAILABLE
+                    : flinkRowsQueue.getAvailabilityFuture());
+    }
+
+    @Override
+    public void addSplits(List<StarRocksSplit> splits) {
+    }
+
+    @Override
+    public void notifyNoMoreSplits() {
+    }
+
+    @Override
+    public List<StarRocksSplit> snapshotState(long checkpointId) {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public void handleSourceEvents(SourceEvent sourceEvent) {
+        LOG.info("Receive source event {}", sourceEvent);
+        if (sourceEvent instanceof StarRocksSourceEvent) {
+            if (this.queryType == StarRocksSourceQueryType.QueryCount) {
+                startQueryCountReader();
+            } else {
+                startNonQueryCountReader(((StarRocksSourceEvent) sourceEvent).getParallelism());
+            }
+            sourceEventFuture.complete(null);
         }
     }
 
+    @Override
+    public void close() throws Exception {
+        LOG.info("Close source reader");
+        if (executorService != null) {
+            executorService.shutdownNow();
+        }
+        this.dataReaderList.parallelStream().forEach(dataReader -> {
+            if (dataReader != null) {
+                dataReader.close();
+            }
+        });
+    }
+
     private void startQueryCountReader() {
+        LOG.info("Start query count reader");
         int subTaskId = readerContext.getIndexOfSubtask();
         if (subTaskId == 0 && this.dataCount > 0) {
             rowBatch = new RowBatch(new Iterator<GenericRowData>() {
@@ -120,16 +192,10 @@ public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSpl
         }
     }
 
-    private void startNonQueryCountReader() {
+    private void startNonQueryCountReader(int parallelism) {
+        LOG.info("Start non query count reader");
         int subTaskId = readerContext.getIndexOfSubtask();
-        // wait for the source event to get the parallelism
-        StarRocksSourceEvent event;
-        try {
-            event = sourceEventFuture.get();
-        } catch (Exception e) {
-            throw new StarRocksException(e);
-        }
-        List<List<QueryBeXTablets>> lists = StarRocksSourceCommonFunc.splitQueryBeXTablets(event.getParallelism(), queryInfo);
+        List<List<QueryBeXTablets>> lists = StarRocksSourceCommonFunc.splitQueryBeXTablets(parallelism, queryInfo);
         lists.get(subTaskId).forEach(beXTablets -> {
             StarRocksSourceBeBatchReader beReader =
                     new StarRocksSourceBeBatchReader(beXTablets.getBeNode(), colunmRichInfos, selectColumns, sourceOptions);
@@ -137,28 +203,32 @@ public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSpl
             this.dataReaderList.add(beReader);
         });
 
+        this.executorService = Executors.newFixedThreadPool(
+                sourceOptions.getScanReaderNumConcurrentFetcher(), r -> new Thread(r, "Source Reader for " + subTaskId));
         final AtomicInteger count = new AtomicInteger(0);
-        this.dataReaderList.parallelStream().forEach(dataReader -> {
-            int index = count.incrementAndGet();
-            while (true) {
-                try {
-                    StarRocksSourceFlinkRows rows = dataReader.getNextBatch();
-                    if (rows == null) {
-                        if (numFinishedReader.incrementAndGet() == dataReaderList.size()) {
-                            // insert an EOF to indicate the InputStatus.END_OF_INPUT
-                            flinkRowsQueue.put(index, RowBatch.EOF);
+        this.dataReaderList.forEach(dataReader ->
+            executorService.submit(() -> {
+                int index = count.incrementAndGet();
+                while (true) {
+                    try {
+                        StarRocksSourceFlinkRows rows = dataReader.getNextBatch();
+                        if (rows == null) {
+                            if (numFinishedReader.incrementAndGet() == dataReaderList.size()) {
+                                // insert an EOF to indicate the InputStatus.END_OF_INPUT
+                                flinkRowsQueue.put(index, RowBatch.EOF);
+                            }
+                            return;
                         }
+
+                        flinkRowsQueue.put(index, new RowBatch(rows));
+                    } catch (Exception e) {
+                        exception.compareAndSet(null, e);
+                        LOG.error("Failed to read flink rows", e);
                         return;
                     }
-
-                    flinkRowsQueue.put(index, new RowBatch(rows));
-                } catch (Exception e) {
-                    exception.compareAndSet(null, e);
-                    LOG.error("Failed to read flink rows", e);
-                    return;
                 }
             }
-        });
+        ));
 
         if (dataReaderList.isEmpty()) {
             try {
@@ -167,62 +237,6 @@ public class StarRocksSourceReader implements SourceReader<RowData, StarRocksSpl
                 throw new StarRocksException(e);
             }
         }
-    }
-
-    @Override
-    public InputStatus pollNext(ReaderOutput<RowData> output) throws Exception {
-        checkException();
-        if (rowBatch == null || !rowBatch.hasNext()) {
-            rowBatch = flinkRowsQueue.poll();
-            if (rowBatch == RowBatch.EOF) {
-                return InputStatus.END_OF_INPUT;
-            }
-        }
-
-        if (rowBatch != null && rowBatch.hasNext()) {
-            output.collect(rowBatch.next());
-            counterTotalScannedRows.inc(1);
-            return InputStatus.MORE_AVAILABLE;
-        }
-
-        return InputStatus.NOTHING_AVAILABLE;
-    }
-
-    @Override
-    public CompletableFuture<Void> isAvailable() {
-        checkException();
-        return rowBatch != null
-                ? FutureCompletingBlockingQueue.AVAILABLE
-                : flinkRowsQueue.getAvailabilityFuture();
-    }
-
-    @Override
-    public void addSplits(List<StarRocksSplit> splits) {
-    }
-
-    @Override
-    public void notifyNoMoreSplits() {
-    }
-
-    @Override
-    public List<StarRocksSplit> snapshotState(long checkpointId) {
-        return Collections.emptyList();
-    }
-
-    @Override
-    public void handleSourceEvents(SourceEvent sourceEvent) {
-        if (sourceEvent instanceof StarRocksSourceEvent) {
-            sourceEventFuture.complete((StarRocksSourceEvent) sourceEvent);
-        }
-    }
-
-    @Override
-    public void close() throws Exception {
-        this.dataReaderList.parallelStream().forEach(dataReader -> {
-            if (dataReader != null) {
-                dataReader.close();
-            }
-        });
     }
 
     private void checkException() {

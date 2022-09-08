@@ -193,6 +193,7 @@ public class StarRocksSinkWriter<T> implements StatefulSink.StatefulSinkWriter<T
 
     @Override
     public void close() throws Exception {
+        LOG.info("Close sink writer");
         sinkManager.close();
     }
 

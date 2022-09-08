@@ -91,10 +91,18 @@ public class StarRocksSourceOptions implements Serializable {
             .booleanType().defaultValue(true).withDescription("Whether to use new source api defined in FLIP-27.");
 
     public static final ConfigOption<Integer> SCAN_READER_QUEUE_CAPACITY =
-            ConfigOptions.key("scan.reader-queue.capacity")
+            ConfigOptions.key("scan.reader.queue-capacity")
                     .intType()
                     .defaultValue(2)
-                    .withDescription("The capacity of the element queue in the source reader.");
+                    .withDescription("The capacity of the element queue in the source reader. " +
+                            "The option is available when " + SCAN_USE_NEW_API.key() + " is true");
+
+    public static final ConfigOption<Integer> SCAN_READER_NUM_CONCURRENT_FETCHER =
+            ConfigOptions.key("scan.reader.num-concurrent-fetcher")
+                    .intType()
+                    .defaultValue(3)
+                    .withDescription("The number of concurrent fetcher to fetch data. " +
+                            "The option is available when " + SCAN_USE_NEW_API.key() + " is true");
 
     // lookup Options
     public static final ConfigOption<Long> LOOKUP_CACHE_MAX_ROWS = ConfigOptions.key("lookup.cache.max-rows")
@@ -233,6 +241,10 @@ public class StarRocksSourceOptions implements Serializable {
 
     public int getScanReaderQueueCapacity() {
         return tableOptions.get(SCAN_READER_QUEUE_CAPACITY);
+    }
+
+    public int getScanReaderNumConcurrentFetcher() {
+        return tableOptions.get(SCAN_READER_NUM_CONCURRENT_FETCHER);
     }
 
     public boolean useNewApi() {

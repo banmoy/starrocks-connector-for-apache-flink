@@ -32,4 +32,11 @@ public class StarRocksSourceEvent implements SourceEvent {
     public int getParallelism() {
         return parallelism;
     }
+
+    @Override
+    public String toString() {
+        return "StarRocksSourceEvent{" +
+                "parallelism=" + parallelism +
+                '}';
+    }
 }

@@ -26,9 +26,7 @@ import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.Table;
-import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.BeforeClass;
@@ -84,10 +82,12 @@ public class StarRocksITCase extends StarRocksITTestBase {
                  "DISTRIBUTED BY HASH (name) BUCKETS 8";
         STARROCKS_CLUSTER.executeMysqlCommand(createTable);
 
-        EnvironmentSettings bsSettings = EnvironmentSettings.newInstance().inBatchMode().build();
-        TableEnvironment tEnv = TableEnvironment.create(bsSettings);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+        StreamTableEnvironment tEnv;
+        tEnv = StreamTableEnvironment.create(env);
         String createSQL = "CREATE TABLE USER_RESULT(" +
-                "name VARCHAR," +
+                "name STRING," +
                 "score BIGINT," +
                 "a TIMESTAMP(3)," +
                 "b STRING," +

@@ -31,12 +31,16 @@ import org.apache.flink.api.connector.source.SplitEnumeratorContext;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.data.RowData;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
 
 /** Implementation StarRocks source using {@link Source}. */
 public class StarRocksNewSource implements Source<RowData, StarRocksSplit, StarRocksEnumState> {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StarRocksNewSource.class);
 
     private final StarRocksSourceOptions sourceOptions;
     private QueryInfo queryInfo;
@@ -68,6 +72,7 @@ public class StarRocksNewSource implements Source<RowData, StarRocksSplit, StarR
 
     @Override
     public SourceReader<RowData, StarRocksSplit> createReader(SourceReaderContext readerContext) throws Exception {
+        LOG.info("Create reader");
         return new StarRocksSourceReader(
                 sourceOptions,
                 queryInfo,
@@ -81,12 +86,14 @@ public class StarRocksNewSource implements Source<RowData, StarRocksSplit, StarR
     @Override
     public SplitEnumerator<StarRocksSplit, StarRocksEnumState> createEnumerator(
             SplitEnumeratorContext<StarRocksSplit> enumContext) throws Exception {
+        LOG.info("Create enumerator");
         return new StarRocksSplitEnumerator(enumContext);
     }
 
     @Override
     public SplitEnumerator<StarRocksSplit, StarRocksEnumState> restoreEnumerator(
             SplitEnumeratorContext<StarRocksSplit> enumContext, StarRocksEnumState checkpoint) throws Exception {
+        LOG.info("Restore enumerator");
         return new StarRocksSplitEnumerator(enumContext);
     }
 

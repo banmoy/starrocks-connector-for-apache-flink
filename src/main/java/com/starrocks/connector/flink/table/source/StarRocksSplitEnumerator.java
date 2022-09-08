@@ -52,6 +52,7 @@ public class StarRocksSplitEnumerator implements SplitEnumerator<StarRocksSplit,
 
     @Override
     public void addReader(int subtaskId) {
+        LOG.info("Add reader {}", subtaskId);
         context.sendEventToSourceReader(subtaskId, new StarRocksSourceEvent(context.currentParallelism()));
     }
 

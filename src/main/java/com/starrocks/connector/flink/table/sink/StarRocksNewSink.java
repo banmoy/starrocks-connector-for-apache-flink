@@ -30,6 +30,8 @@ import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.StatefulSink;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.table.api.TableSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -38,6 +40,8 @@ import java.util.Map;
 
 /** Implementation of {@link Sink} for StarRocks connector. */
 public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRocksSinkBufferEntity>>, StatefulSink.WithCompatibleState {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StarRocksNewSink.class);
 
     private static final long serialVersionUID = 1L;
 
@@ -62,6 +66,7 @@ public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRock
 
     @Override
     public StatefulSinkWriter<T, Map<String, StarRocksSinkBufferEntity>> createWriter(InitContext context) throws IOException {
+        LOG.info("Create sink writer");
         return new StarRocksSinkWriter<>(
                 sinkManager,
                 rowTransformer,
@@ -75,6 +80,7 @@ public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRock
     public StatefulSinkWriter<T, Map<String, StarRocksSinkBufferEntity>> restoreWriter(
             InitContext context, Collection<Map<String, StarRocksSinkBufferEntity>> recoveredState)
             throws IOException {
+        LOG.info("Restore sink writer");
         return new StarRocksSinkWriter<>(
                 sinkManager,
                 rowTransformer,
@@ -91,6 +97,6 @@ public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRock
 
     @Override
     public Collection<String> getCompatibleWriterStateNames() {
-        return Collections.singleton("buffered-rows");
+        return Collections.emptyList();
     }
 }

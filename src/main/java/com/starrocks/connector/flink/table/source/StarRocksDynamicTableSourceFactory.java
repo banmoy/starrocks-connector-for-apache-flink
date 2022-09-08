@@ -73,6 +73,7 @@ public final class StarRocksDynamicTableSourceFactory implements DynamicTableSou
         options.add(StarRocksSourceOptions.SCAN_BE_HOST_MAPPING_LIST);
         options.add(StarRocksSourceOptions.SCAN_USE_NEW_API);
         options.add(StarRocksSourceOptions.SCAN_READER_QUEUE_CAPACITY);
+        options.add(StarRocksSourceOptions.SCAN_READER_NUM_CONCURRENT_FETCHER);
         options.add(StarRocksSourceOptions.LOOKUP_CACHE_TTL_MS);
         options.add(StarRocksSourceOptions.LOOKUP_CACHE_MAX_ROWS);
         options.add(StarRocksSourceOptions.LOOKUP_MAX_RETRIES);
