@@ -14,14 +14,12 @@
 
 package com.starrocks.connector.flink.container;
 
-import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.NetworkSettings;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
-import java.util.Map;
 
 /** Base class for StarRocks container. */
 public abstract class StarRocksContainer<CONTAINER extends StarRocksContainer<CONTAINER>> extends GenericContainer<CONTAINER> {
@@ -44,17 +42,6 @@ public abstract class StarRocksContainer<CONTAINER extends StarRocksContainer<CO
     public String getNetworkIp() {
         NetworkSettings settings = DockerClientFactory.instance().client()
                 .inspectContainerCmd(getContainerId()).exec().getNetworkSettings();
-        System.out.println("getIpAddress: " +  settings.getIpAddress());
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, ContainerNetwork> entry : settings.getNetworks().entrySet()) {
-            if (sb.length() != 0) {
-                sb.append(",");
-            }
-            sb.append(entry.getKey());
-            sb.append(":");
-            sb.append(entry.getValue().getIpAddress());
-        }
-        System.out.println(sb);
         return settings.getNetworks().values().iterator().next().getIpAddress();
     }
 

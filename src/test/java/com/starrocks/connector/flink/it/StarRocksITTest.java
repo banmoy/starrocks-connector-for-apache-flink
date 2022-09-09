@@ -28,17 +28,20 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.Table;
+import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.flink.table.api.Expressions.$;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 
 /** IT tests for StarRocks sink and source. */
@@ -53,16 +56,16 @@ public class StarRocksITTest extends StarRocksITTestBase {
     }
 
     @Test
-    public void testSinkNewApi() {
+    public void testSinkNewApi() throws Exception {
         testSink(true);
     }
 
     @Test
-    public void testSinkOldApi() {
+    public void testSinkOldApi() throws Exception {
         testSink(false);
     }
 
-    private void testSink(boolean useNewApi) {
+    private void testSink(boolean useNewApi) throws Exception {
         StarRocksSinkOptions sinkOptions = StarRocksSinkOptions.builder()
                 .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("load-url", STARROCKS_CLUSTER.getHttpUrls())
@@ -123,16 +126,12 @@ public class StarRocksITTest extends StarRocksITTestBase {
                 "'sink.use.new-api' = '" + sinkOptions.useNewApi() + "'" +
                 ")";
         tEnv.executeSql(createSQL);
+        TableResult result = tEnv.executeSql("INSERT INTO USER_RESULT\n" +
+                    "VALUES ('lebron', 99, TO_TIMESTAMP('2020-01-01 01:00:01'), 'b', 2.3, TO_DATE('2020-01-01'))");
+        result.await(1, TimeUnit.MINUTES);
+        verifyResult(new Row[]{Row.of("lebron", 99, Timestamp.valueOf("2020-01-01 01:00:01"), "b", 2.3, Date.valueOf("2020-01-01"))},
+                String.format("select * from %s.%s", sinkOptions.getDatabaseName(), sinkOptions.getTableName()));
 
-        String exMsg = "";
-        try {
-            tEnv.executeSql("INSERT INTO USER_RESULT\n" +
-                    "VALUES ('lebron', 99, TO_TIMESTAMP('2020-01-01 01:00:01'), 'b', 2.3, TO_DATE('2020-01-01'))").collect();
-            Thread.sleep(2000);
-        } catch (Exception e) {
-            exMsg = e.getMessage();
-        }
-        assertFalse(exMsg, exMsg.length() > 0);
     }
 
     @Test

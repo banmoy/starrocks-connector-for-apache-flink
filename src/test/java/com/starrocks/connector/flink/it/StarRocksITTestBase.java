@@ -21,6 +21,7 @@ package com.starrocks.connector.flink.it;
 import com.esotericsoftware.minlog.Log;
 import com.starrocks.connector.flink.container.StarRocksCluster;
 import org.apache.flink.types.Row;
+import org.apache.flink.util.TestLogger;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -31,19 +32,19 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 /** Abstract IT case class for StarRocks. */
-public abstract class StarRocksITTestBase {
+public abstract class StarRocksITTestBase extends TestLogger {
 
     private static final Logger LOG = LoggerFactory.getLogger(StarRocksITTestBase.class);
 
     public static StarRocksCluster STARROCKS_CLUSTER =
             new StarRocksCluster(1, 0, 3);
 
-    private static Connection DB_CONNECTION;
+    protected static Connection DB_CONNECTION;
 
     @BeforeClass
     public static void setUp() throws Exception {
@@ -96,23 +97,25 @@ public abstract class StarRocksITTestBase {
      *             );
      */
     public static void verifyResult(Row[] expectedData, String dbName, String tableName) throws SQLException {
-        try (PreparedStatement statement = DB_CONNECTION.prepareStatement(
-                String.format("select * from %s.%s", dbName, tableName));
+        verifyResult(expectedData, String.format("select * from %s.%s", dbName, tableName));
+    }
+
+    public static void verifyResult(Row[] expectedData, String sql) throws SQLException {
+        ArrayList<Row> resultData = new ArrayList<>();
+        try (PreparedStatement statement = DB_CONNECTION.prepareStatement(sql);
                 ResultSet resultSet = statement.executeQuery()) {
-            int rowCount = 0;
             int columnCount = resultSet.getMetaData().getColumnCount();
             while (resultSet.next()) {
                 Row row = new Row(columnCount);
                 for (int i = 0; i < columnCount; i++) {
-                    row.setField(i, resultSet.getObject(i));
+                    row.setField(i, resultSet.getObject(i + 1));
                 }
-                rowCount++;
-                assertTrue(rowCount < expectedData.length);
-                Row expectedRow = expectedData[rowCount - 1];
-                assertEquals(expectedRow.getArity(), columnCount);
-                assertEquals(expectedRow.toString(), row.toString());
+                resultData.add(row);
             }
-            assertEquals(rowCount, expectedData.length);
+        }
+        assertEquals(expectedData.length, resultData.size());
+        for (int i = 0; i < expectedData.length; i++) {
+            assertEquals(expectedData[i].toString(), resultData.get(i).toString());
         }
     }
 }
