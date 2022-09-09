@@ -35,6 +35,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.apache.flink.table.api.Expressions.$;
 import static org.junit.Assert.assertFalse;
@@ -45,7 +46,6 @@ public class StarRocksITCase extends StarRocksITTestBase {
 
     private final static String DB_NAME = "starrocks_connector_it";
 
-
     @BeforeClass
     public static void prepare() {
         String createDbCmd = "CREATE DATABASE " + DB_NAME;
@@ -53,12 +53,21 @@ public class StarRocksITCase extends StarRocksITTestBase {
     }
 
     @Test
-    public void testSink() {
+    public void testSinkNewApi() {
+        testSink(true);
+    }
+
+    @Test
+    public void testSinkOldApi() {
+        testSink(false);
+    }
+
+    private void testSink(boolean useNewApi) {
         StarRocksSinkOptions sinkOptions = StarRocksSinkOptions.builder()
                 .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("load-url", STARROCKS_CLUSTER.getHttpUrls())
                 .withProperty("database-name", DB_NAME)
-                .withProperty("table-name", "sink_table")
+                .withProperty("table-name", "sink_table_" + (useNewApi ? "new_api" : "old_api"))
                 .withProperty("username", "root")
                 .withProperty("password", "")
                 .withProperty("sink.label-prefix", "sink-prefix")
@@ -68,6 +77,7 @@ public class StarRocksITCase extends StarRocksITTestBase {
                 .withProperty("sink.buffer-flush.max-rows", "1002000")
                 .withProperty("sink.max-retries", "2")
                 .withProperty("sink.connect.timeout-ms", "2000")
+                .withProperty("sink.use.new-api", String.valueOf(useNewApi))
                 .build();
 
         String createTable =
@@ -109,7 +119,8 @@ public class StarRocksITCase extends StarRocksITTestBase {
                 "'sink.buffer-flush.interval-ms' = '" + sinkOptions.getSinkMaxFlushInterval() + "'," +
                 "'sink.buffer-flush.enqueue-timeout-ms' = '" + sinkOptions.getSinkOfferTimeout() + "'," +
                 "'sink.properties.column_separator' = '\\x01'," +
-                "'sink.properties.row_delimiter' = '\\x02'" +
+                "'sink.properties.row_delimiter' = '\\x02'," +
+                "'sink.use.new-api' = '" + sinkOptions.useNewApi() + "'" +
                 ")";
         tEnv.executeSql(createSQL);
 
@@ -125,14 +136,24 @@ public class StarRocksITCase extends StarRocksITTestBase {
     }
 
     @Test
-    public void testSource() {
+    public void testSourceNewApi() {
+        testSource(true);
+    }
+
+    @Test
+    public void testSourceOldApi() {
+        testSource(false);
+    }
+
+    private void testSource(boolean useNewApi) {
         StarRocksSourceOptions options = StarRocksSourceOptions.builder()
                 .withProperty("scan-url", STARROCKS_CLUSTER.getHttpUrls())
                 .withProperty("jdbc-url", getJdbcUrl())
                 .withProperty("username", "root")
                 .withProperty("password", "")
                 .withProperty("database-name", DB_NAME)
-                .withProperty("table-name", "source_table")
+                .withProperty("table-name", "source_table_" + (useNewApi ? "new_api" : "old_api"))
+                .withProperty("scan.use.new-api", String.valueOf(useNewApi))
                 .build();
 
         String createTable =
@@ -155,7 +176,7 @@ public class StarRocksITCase extends StarRocksITTestBase {
 
         String inserIntoData =
                 "INSERT INTO " + String.join(".", DB_NAME, options.getTableName()) + " " +
-                        "WITH LABEL starrocks_source_test VALUES" +
+                        "WITH LABEL starrocks_source_" + UUID.randomUUID().toString().substring(0, 5) + " VALUES" +
                         "('2022-09-01', '2022-09-01 21:28:30', 'c11', 'vc11', 0, 125, -32000, 600000, 9232322, 1.2, 2.23)," +
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);
@@ -187,7 +208,9 @@ public class StarRocksITCase extends StarRocksITTestBase {
                         "  'username' = '" + options.getUsername() + "',\n" +
                         "  'password' = '" + options.getPassword() + "',\n" +
                         "  'database-name' = '" + options.getDatabaseName() + "',\n" +
-                        "  'table-name' = '" + options.getTableName() + "')"
+                        "  'table-name' = '" + options.getTableName() + "',\n" +
+                        "  'scan.use.new-api' = '" + options.useNewApi() +
+                        "')"
         );
         Exception e = null;
         try {
@@ -231,7 +254,7 @@ public class StarRocksITCase extends StarRocksITTestBase {
 
         String inserIntoData =
                 "INSERT INTO " + String.join(".", DB_NAME, options.getTableName()) + " " +
-                        "WITH LABEL starrocks_lookup_test VALUES" +
+                        "WITH LABEL starrocks_lookup_" + UUID.randomUUID().toString().substring(0, 5) + " VALUES" +
                         "('2022-09-01', '2022-09-01 21:28:30', 'c11', 'vc11', 0, 125, -32000, 600000, 9232322, 1.2, 2.23)," +
                         "('2022-09-02', '2022-09-02 05:12:32', 'c12', 'vc12', 1, 3, 948, 93, -12, 43.334, -9494.2);";
         STARROCKS_CLUSTER.executeMysqlCommand(inserIntoData);

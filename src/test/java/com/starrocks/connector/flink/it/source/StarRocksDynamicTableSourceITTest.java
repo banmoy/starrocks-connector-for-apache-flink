@@ -1,26 +1,34 @@
 package com.starrocks.connector.flink.it.source;
 
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-
-import java.util.List;
-
 import com.starrocks.connector.flink.StarRocksSource;
 import com.starrocks.connector.flink.table.source.StarRocksSourceCommonFunc;
 import com.starrocks.connector.flink.table.source.StarRocksSourceOptions;
-
+import mockit.Mock;
+import mockit.MockUp;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.data.RowData;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
-import mockit.Mock;
-import mockit.MockUp;
+import java.util.Arrays;
+import java.util.List;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+@RunWith(Parameterized.class)
 public class StarRocksDynamicTableSourceITTest extends StarRocksSourceBaseTest {
+
+    @Parameterized.Parameters(name = "Use New Api = {0}")
+    public static List<Boolean> parameters() {
+        return Arrays.asList(false, true);
+    }
+
+    @Parameterized.Parameter
+    public boolean useNewApi;
 
     private Long dataCount = 30L;
 
@@ -33,8 +41,18 @@ public class StarRocksDynamicTableSourceITTest extends StarRocksSourceBaseTest {
             }
         };
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        List<RowData> dList = env.addSource(StarRocksSource.source(TABLE_SCHEMA, OPTIONS_WITH_COLUMN_IS_COUNT)).setParallelism(5).executeAndCollect(50);
-        assertTrue(dList.size() == dataCount);
+        List<RowData> dList;
+        if (useNewApi) {
+            dList = env.fromSource(
+                        StarRocksSource.newSource(TABLE_SCHEMA, OPTIONS_WITH_COLUMN_IS_COUNT),
+                            WatermarkStrategy.noWatermarks(), "Test Source")
+                    .setParallelism(5).executeAndCollect(50);
+        } else {
+             dList = env.addSource(StarRocksSource.source(TABLE_SCHEMA, OPTIONS_WITH_COLUMN_IS_COUNT))
+                    .setParallelism(5).executeAndCollect(50);
+        }
+
+        assertEquals(dList.size(), (long) dataCount);
     }
 
     @Test
@@ -67,7 +85,9 @@ public class StarRocksDynamicTableSourceITTest extends StarRocksSourceBaseTest {
                     "  'username' = '" + OPTIONS.getUsername() + "',\n" +
                     "  'password' = '" + OPTIONS.getPassword() + "',\n" +
                     "  'database-name' = '" + OPTIONS.getDatabaseName() + "',\n" +
-                    "  'table-name' = '" + OPTIONS.getTableName() + "')"
+                    "  'table-name' = '" + OPTIONS.getTableName() + "',\n" +
+                    "  'scan.use.new-api' = '" + useNewApi + "'" +
+                    ")"
                 );
         Exception e = null;
         try {

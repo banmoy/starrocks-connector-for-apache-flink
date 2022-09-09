@@ -15,21 +15,32 @@
 package com.starrocks.connector.flink.it.sink;
 
 import com.starrocks.connector.flink.StarRocksSinkBaseTest;
-
 import mockit.Expectations;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertFalse;
 
+@RunWith(Parameterized.class)
 public class StarRocksDynamicTableSinkITTest extends StarRocksSinkBaseTest {
-    
+
+   @Parameterized.Parameters(name = "Use New Api = {0}")
+   public static List<Boolean> parameters() {
+        return Arrays.asList(false, true);
+   }
+
+   @Parameterized.Parameter
+   public boolean useNewApi;
+
     @Test
     public void testBatchSink() {
         List<Map<String, String>> meta = new ArrayList<>();
@@ -133,7 +144,8 @@ public class StarRocksDynamicTableSinkITTest extends StarRocksSinkBaseTest {
             // "'sink.properties.format' = 'json'," +
             // "'sink.properties.strip_outer_array' = 'true'," +
             "'sink.properties.column_separator' = '\\x01'," +
-            "'sink.properties.row_delimiter' = '\\x02'" +
+            "'sink.properties.row_delimiter' = '\\x02'," +
+            "'sink.use.new-api' = '" + useNewApi + "'" +
             ")";
         tEnv.executeSql(createSQL);
 

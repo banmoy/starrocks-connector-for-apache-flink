@@ -14,16 +14,15 @@
 
 package com.starrocks.connector.flink.it.sink;
 
+import com.starrocks.connector.flink.StarRocksSink;
+import com.starrocks.connector.flink.StarRocksSinkBaseTest;
+import mockit.Expectations;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.TableSchema;
 import org.junit.Test;
-
-import mockit.Expectations;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -31,8 +30,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.starrocks.connector.flink.StarRocksSink;
-import com.starrocks.connector.flink.StarRocksSinkBaseTest;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 class TestEntry implements Serializable {
 
@@ -55,9 +54,18 @@ public class StarRocksGenericSinkITTest extends StarRocksSinkBaseTest {
         new TestEntry(99, "stephen"),
         new TestEntry(98, "klay")
     };
-    
+
     @Test
-    public void testBatchSink() {
+    public void testSinkNewApi() {
+        testBatchSink(true);
+    }
+
+    @Test
+    public void testSinkOldApi() {
+        testBatchSink(false);
+    }
+    
+    private void testBatchSink(boolean useNewApi) {
         List<Map<String, String>> meta = new ArrayList<>();
         meta.add(new HashMap<String, String>(){{
             put("COLUMN_NAME", "name");
@@ -80,17 +88,34 @@ public class StarRocksGenericSinkITTest extends StarRocksSinkBaseTest {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setRestartStrategy(new RestartStrategies.NoRestartStrategyConfiguration());
         env.setParallelism(1);
-        env.fromElements(TEST_DATA)
-            .addSink(StarRocksSink.sink(
-                TableSchema.builder()
-                    .field("score", DataTypes.INT())
-                    .field("name", DataTypes.VARCHAR(20))
-                    .build(),
-                OPTIONS,
-                (slots, te) -> {
-                    slots[0] = te.score;
-                    slots[1] = te.name;
-                }));
+        DataStreamSource<TestEntry> source = env.fromElements(TEST_DATA);
+        if (useNewApi) {
+            source.sinkTo(
+                    StarRocksSink.newSink(
+                            TableSchema.builder()
+                                    .field("score", DataTypes.INT())
+                                    .field("name", DataTypes.VARCHAR(20))
+                                    .build(),
+                            OPTIONS,
+                            (slots, te) -> {
+                                slots[0] = te.score;
+                                slots[1] = te.name;
+                            }
+                    ));
+        } else {
+            source.addSink(
+                    StarRocksSink.sink(
+                            TableSchema.builder()
+                                    .field("score", DataTypes.INT())
+                                    .field("name", DataTypes.VARCHAR(20))
+                                    .build(),
+                            OPTIONS,
+                            (slots, te) -> {
+                                slots[0] = te.score;
+                                slots[1] = te.name;
+                            }
+                    ));
+        }
 
         String exMsg = "";
         try {
@@ -99,42 +124,6 @@ public class StarRocksGenericSinkITTest extends StarRocksSinkBaseTest {
             exMsg = e.getMessage();
         }
         assertFalse(exMsg, exMsg.length() > 0);
-        // real case
-        // mockSuccessResponse();
-        // StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        // env.setRestartStrategy(new RestartStrategies.NoRestartStrategyConfiguration());
-        // env.setParallelism(1);
-        // env.fromElements(TEST_DATA)
-        //     .addSink(StarRocksSink.sink(
-        //         TableSchema.builder()
-        //             .field("k1", DataTypes.TINYINT())
-        //             .field("k2", DataTypes.DECIMAL(10, 2))
-        //             .field("v1", DataTypes.CHAR(10))
-        //             .field("v2", DataTypes.INT())
-        //             .build(),
-        //         StarRocksSinkOptions.builder()
-        //             .withProperty("jdbc-url", "jdbc:mysql://172.26.92.139:28533")
-        //             .withProperty("load-url", "172.26.92.139:28531;172.26.92.139:28531")
-        //             .withProperty("database-name", "aa")
-        //             .withProperty("table-name", "test")
-        //             .withProperty("username", "root")
-        //             .withProperty("password", "")
-        //             .withProperty("sink.properties.column_separator", "\\x02")
-        //             .build(),
-        //         (slots, te) -> {
-        //             slots[0] = te.score;
-        //             slots[1] = te.score;
-        //             slots[2] = te.name;
-        //             slots[3] = te.score;
-        //         }));
-
-        // String exMsg = "";
-        // try {
-        //     env.execute();
-        // } catch (Exception e) {
-        //     exMsg = e.getMessage();
-        // }
-        // assertFalse(exMsg, exMsg.length() > 0);
     }
 
     @Test
