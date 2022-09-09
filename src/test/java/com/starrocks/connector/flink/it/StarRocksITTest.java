@@ -42,7 +42,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 
 /** IT tests for StarRocks sink and source. */
-public class StarRocksITCase extends StarRocksITTestBase {
+public class StarRocksITTest extends StarRocksITTestBase {
 
     private final static String DB_NAME = "starrocks_connector_it";
 
