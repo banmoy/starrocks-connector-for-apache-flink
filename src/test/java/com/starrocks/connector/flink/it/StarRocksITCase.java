@@ -200,7 +200,6 @@ public class StarRocksITCase extends StarRocksITTestBase {
         assertNull(e);
     }
 
-
     @Test
     public void testLookup() {
         StarRocksSourceOptions options = StarRocksSourceOptions.builder()

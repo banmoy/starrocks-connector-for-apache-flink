@@ -50,6 +50,21 @@ public class StarRocksNewSource implements Source<RowData, StarRocksSplit, StarR
 
     private StarRocksSourceQueryType queryType;
 
+    public StarRocksNewSource(TableSchema flinkSchema, StarRocksSourceOptions sourceOptions) {
+        this.sourceOptions = sourceOptions;
+        Map<String, ColunmRichInfo> columnMap = StarRocksSourceCommonFunc.genColumnMap(flinkSchema);
+        this.colunmRichInfos = StarRocksSourceCommonFunc.genColunmRichInfo(columnMap);
+        String SQL = genSQL(sourceOptions);
+        if (this.sourceOptions.getColumns().trim().toLowerCase().contains("count(")) {
+            this.queryType = StarRocksSourceQueryType.QueryCount;
+            this.dataCount = StarRocksSourceCommonFunc.getQueryCount(this.sourceOptions, SQL);
+            this.selectColumns = null;
+        } else {
+            this.queryInfo = StarRocksSourceCommonFunc.getQueryInfo(this.sourceOptions, SQL);
+            this.selectColumns = StarRocksSourceCommonFunc.genSelectedColumns(columnMap, sourceOptions, colunmRichInfos);
+        }
+    }
+
     public StarRocksNewSource(StarRocksSourceOptions sourceOptions, TableSchema flinkSchema,
                               String filter, long limit, SelectColumn[] selectColumns, String columns, StarRocksSourceQueryType queryType) {
         this.sourceOptions = sourceOptions;
@@ -110,6 +125,19 @@ public class StarRocksNewSource implements Source<RowData, StarRocksSplit, StarR
     @Override
     public Boundedness getBoundedness() {
         return Boundedness.BOUNDED;
+    }
+
+    private String genSQL(StarRocksSourceOptions options) {
+        String columns = options.getColumns().isEmpty() ? "*" : options.getColumns();
+        String filter = options.getFilter().isEmpty() ? "" : " where " + options.getFilter();
+        StringBuilder sqlSb = new StringBuilder("select ");
+        sqlSb.append(columns);
+        sqlSb.append(" from ");
+        sqlSb.append("`" + sourceOptions.getDatabaseName() + "`");
+        sqlSb.append(".");
+        sqlSb.append("`" + sourceOptions.getTableName() + "`");
+        sqlSb.append(filter);
+        return sqlSb.toString();
     }
 
     private String genSQL(StarRocksSourceQueryType queryType, String columns, String filter, long limit) {

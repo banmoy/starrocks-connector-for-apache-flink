@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 /** Implementation of {@link Sink} for StarRocks connector. */
 public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRocksSinkBufferEntity>>, StatefulSink.WithCompatibleState {
@@ -46,9 +47,11 @@ public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRock
     private static final long serialVersionUID = 1L;
 
     private final StarRocksSinkManager sinkManager;
-    private final StarRocksIRowTransformer<T> rowTransformer;
     private final StarRocksSinkOptions sinkOptions;
-    private final StarRocksISerializer serializer;
+    @Nullable
+    private StarRocksIRowTransformer<T> rowTransformer;
+    @Nullable
+    private StarRocksISerializer serializer;
 
     public StarRocksNewSink(StarRocksSinkOptions sinkOptions, TableSchema schema, StarRocksIRowTransformer<T> rowTransformer) {
         StarRocksJdbcConnectionOptions
@@ -61,6 +64,11 @@ public class StarRocksNewSink<T> implements StatefulSink<T, Map<String, StarRock
         rowTransformer.setTableSchema(schema);
         this.serializer = StarRocksSerializerFactory.createSerializer(sinkOptions, schema.getFieldNames());
         this.rowTransformer = rowTransformer;
+        this.sinkOptions = sinkOptions;
+    }
+
+    public StarRocksNewSink(StarRocksSinkOptions sinkOptions) {
+        this.sinkManager = new StarRocksSinkManager(sinkOptions, null);
         this.sinkOptions = sinkOptions;
     }
 
