@@ -266,7 +266,14 @@ public class StarRocksCluster implements Closeable {
         try {
             LOG.info("Starting FE container {}", container.getId());
             container.start();
-            Container.ExecResult result = container.execInContainer("/bin/bash", "-c", scriptPath, helperCmd);
+            Container.ExecResult result;
+            // TODO optimize stop_fe.sh after fe becomes zombie process
+            result = container.execInContainer("/bin/bash", "-c", "sed -i 's/ps -p \\$pid > \\/dev\\/null/jinfo \\$pid > \\/dev\\/null/g' /data/starrocks/fe/bin/stop_fe.sh");
+            if (result.getExitCode() != 0) {
+                String errMsg = String.format("Failed to modify stop_fe.sh in container %s, %s", container.getId(), result);
+                throw new Exception(errMsg);
+            }
+            result = container.execInContainer("/bin/bash", "-c", scriptPath, helperCmd);
             if (result.getExitCode() != 0) {
                 String errMsg = String.format("Failed to start FE in container %s, %s", container.getId(), result);
                 throw new Exception(errMsg);
