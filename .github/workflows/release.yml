@@ -15,93 +15,103 @@ jobs:
           fetch-depth: 0
       - run: git checkout flink-1.11 && git pull origin flink-1.11 && cd ./starrocks-stream-load-sdk
       - name: Install starrocks-stream-load-sdk 1.11
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
+        env:
+          DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          lifecycle: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true'
       - run: cd ..
       - name: Package flink-1.11_2.11
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
       - id: p1
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - name: Package flink-1.11_2.12
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
       - id: p2
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - run: git checkout flink-1.12 && git pull origin flink-1.12 && cd ./starrocks-stream-load-sdk
       - name: Install starrocks-stream-load-sdk 1.12
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
+        env:
+          DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          lifecycle: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true'
       - run: cd ..
       - name: Package flink-1.12_2.11
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
       - id: p3
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
       - name: Package flink-1.12_2.12
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
       - id: p4
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - run: git checkout flink-1.13 && git pull origin flink-1.13 && cd ./starrocks-stream-load-sdk
       - name: Install starrocks-stream-load-sdk 1.13
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
+        env:
+          DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          lifecycle: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true'
       - run: cd ..
       - name: Package flink-1.13_2.11
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
       - id: p5
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - name: Package flink-1.13_2.12
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
       - id: p6
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - run: git checkout flink-1.14 && git pull origin flink-1.14 && cd ./starrocks-stream-load-sdk
       - name: Install starrocks-stream-load-sdk 1.14
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
+        env:
+          DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          lifecycle: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true'
       - run: cd ..
       - name: Package flink-1.14_2.11
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.11'
       - id: p7
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - name: Package flink-1.14_2.12
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
+          commands: 'clean validate package -Dmaven.test.skip=true -Pscala-2.12'
       - id: p8
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
       - run: git checkout flink-1.15 && git pull origin flink-1.15 && cd ./starrocks-stream-load-sdk
       - name: Install starrocks-stream-load-sdk 1.15
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
+        env:
+          DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          lifecycle: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true'
       - run: cd ..
       - name: Package flink-1.15
-        uses: xlui/action-maven-cli@jdk8
+        uses: GuillaumeFalourd/maven-cli-action@jdk8
         with:
-          lifecycle: 'clean validate package -Dmaven.test.skip=true'
+          commands: 'clean validate package -Dmaven.test.skip=true'
       - id: p9
         run: find target/ -name "flink-connector*.jar" | grep -i "[0-9].jar" | xargs -i cp {} ./ && echo ::set-output name=jar::$(ls -t flink-connector*.jar | head -n 1)
 
