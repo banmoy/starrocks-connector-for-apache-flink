@@ -19,7 +19,7 @@ jobs:
         env:
           DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          commands: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true -Dgpg.skip'
       - name: Package flink-1.11_2.11
         uses:  GuillaumeFalourd/maven-cli-jdks-action@jdk8
         with:
@@ -40,7 +40,7 @@ jobs:
         env:
           DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          commands: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true -Dgpg.skip'
       - name: Package flink-1.12_2.11
         uses:  GuillaumeFalourd/maven-cli-jdks-action@jdk8
         with:
@@ -60,7 +60,7 @@ jobs:
         env:
           DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          commands: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true -Dgpg.skip'
       - name: Package flink-1.13_2.11
         uses:  GuillaumeFalourd/maven-cli-jdks-action@jdk8
         with:
@@ -81,7 +81,7 @@ jobs:
         env:
           DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          commands: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true -Dgpg.skip'
       - name: Package flink-1.14_2.11
         uses:  GuillaumeFalourd/maven-cli-jdks-action@jdk8
         with:
@@ -102,7 +102,7 @@ jobs:
         env:
           DIRECTORY_PATH: starrocks-stream-load-sdk
         with:
-          commands: 'clean install -Dmaven.test.skip=true'
+          commands: 'clean install -Dmaven.test.skip=true -Dgpg.skip'
       - name: Package flink-1.15
         uses:  GuillaumeFalourd/maven-cli-jdks-action@jdk8
         with:
