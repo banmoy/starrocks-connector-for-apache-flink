@@ -150,6 +150,11 @@ public class StarRocksDynamicSinkFunctionV2<T> extends StarRocksDynamicSinkFunct
                     return;
                 }
                 sinkManager.write(data.getUniqueKey(), data.getDatabase(), data.getTable(), data.getRow());
+                this.totalReceivedRows += 1;
+                if (this.totalReceivedRows % 100L == 1L) {
+                    log.debug("Receive record, database: {}, table: {}, record: {}",
+                            data.getDatabase(), data.getTable(), data.getRow());
+                }
                 return;
             }
             // raw data sink
