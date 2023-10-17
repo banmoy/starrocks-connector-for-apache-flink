@@ -153,7 +153,7 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
             log.warn("Stream load not start");
         }
         if (begin(region)) {
-            StreamLoadTableProperties tableProperties = properties.getTableProperties(region.getUniqueKey());
+            StreamLoadTableProperties tableProperties = properties.getTableProperties(region.getDatabase(), region.getTable());
             return executorService.submit(() -> send(tableProperties, region));
         } else {
             region.fail(new StreamLoadFailException("Transaction start failed, db : " + region.getDatabase()));
@@ -168,7 +168,7 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
             log.warn("Stream load not start");
         }
         if (begin(region)) {
-            StreamLoadTableProperties tableProperties = properties.getTableProperties(region.getUniqueKey());
+            StreamLoadTableProperties tableProperties = properties.getTableProperties(region.getDatabase(), region.getTable());
             return executorService.schedule(() -> send(tableProperties, region), delayMs, TimeUnit.MILLISECONDS);
         } else {
             region.fail(new StreamLoadFailException("Transaction start failed, db : " + region.getDatabase()));
