@@ -501,7 +501,12 @@ public class StarRocksSinkOptions implements Serializable {
             dataFormat = new StreamLoadDataFormat.CSVFormat(StarRocksDelimiterParser
                     .parse(getSinkStreamLoadProperties().get("row_delimiter"), "\n"));
         } else if (getStreamLoadFormat() == StarRocksSinkOptions.StreamLoadFormat.JSON) {
-            dataFormat = StreamLoadDataFormat.JSON;
+            // if not specify "strip_outer_array" or it's false, use ndjson to optimize
+            // memory usage of parsing json on StarRocks side
+            boolean ndjson = !getSinkStreamLoadProperties().containsKey("strip_outer_array") ||
+                    getSinkStreamLoadProperties().get("strip_outer_array")
+                            .trim().equalsIgnoreCase("false");
+            dataFormat = new StreamLoadDataFormat.JSONFormat(ndjson);
         } else {
             throw new RuntimeException("data format are not support");
         }
@@ -545,12 +550,8 @@ public class StarRocksSinkOptions implements Serializable {
         }
 
         Map<String, String> streamLoadProperties = new HashMap<>(getSinkStreamLoadProperties());
-        // By default, using json format should enable strip_outer_array and ignore_json_size,
-        // which will simplify the configurations
+        // By default, using json format should enable and ignore_json_size, which will simplify the configurations
         if (dataFormat instanceof StreamLoadDataFormat.JSONFormat) {
-            if (!streamLoadProperties.containsKey("strip_outer_array")) {
-                streamLoadProperties.put("strip_outer_array", "true");
-            }
             if (!streamLoadProperties.containsKey("ignore_json_size")) {
                 streamLoadProperties.put("ignore_json_size", "true");
             }

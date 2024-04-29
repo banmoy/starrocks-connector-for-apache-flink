@@ -94,9 +94,33 @@ public interface StreamLoadDataFormat {
     }
 
     class JSONFormat implements StreamLoadDataFormat, Serializable {
-        private static final byte[] first = "[".getBytes(StandardCharsets.UTF_8);
-        private static final byte[] delimiter = ",".getBytes(StandardCharsets.UTF_8);
-        private static final byte[] end = "]".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] ARRAY_JSON_FIRST = "[".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] ARRAY_JSON_DELIMITER = ",".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] ARRAY_JSON_END = "]".getBytes(StandardCharsets.UTF_8);
+
+        private static final byte[] ND_JSON_FIRST = "".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] ND_JSON_DELIMITER = "\n".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] ND_JSON_END = "".getBytes(StandardCharsets.UTF_8);
+
+        private final byte[] first;
+        private final byte[] delimeter;
+        private final byte[] end;
+
+        public JSONFormat() {
+            this(false);
+        }
+
+        public JSONFormat(boolean isNdjson) {
+            if (isNdjson) {
+                this.first = ND_JSON_FIRST;
+                this.delimeter = ND_JSON_DELIMITER;
+                this.end = ND_JSON_END;
+            } else {
+                this.first = ARRAY_JSON_FIRST;
+                this.delimeter = ARRAY_JSON_DELIMITER;
+                this.end = ARRAY_JSON_END;
+            }
+        }
 
         @Override
         public String name() {
@@ -110,7 +134,7 @@ public interface StreamLoadDataFormat {
 
         @Override
         public byte[] delimiter() {
-            return delimiter;
+            return delimeter;
         }
 
         @Override
@@ -123,7 +147,7 @@ public interface StreamLoadDataFormat {
         public String toString() {
             return "JsonFormat{" +
                     "first=" + new String(first) +
-                    ", delimiter=" + new String(delimiter) +
+                    ", delimiter=" + new String(delimeter) +
                     ", end=" + new String(end) +
                     '}';
         }

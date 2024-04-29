@@ -501,7 +501,15 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
     }
 
     @Test
-    public void testJsonFormat() throws Exception {
+    public void testArrayJsonFormat() throws Exception {
+        Map<String, String> map = new HashMap<>();
+        map.put("sink.properties.format", "json");
+        map.put("sink.properties.strip_outer_array", "true");
+        testConfigurationBase(map, env -> null);
+    }
+
+    @Test
+    public void testNdJsonFormat() throws Exception {
         if (isSinkV2) {
             testConfigurationBase(
                     Collections.singletonMap("sink.properties.format", "json"), env -> null);
