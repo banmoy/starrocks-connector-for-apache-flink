@@ -89,6 +89,7 @@ public class StreamLoadProperties implements Serializable {
     private final int maxRetries;
     private final int retryIntervalInMs;
     private final Map<String, String> headers;
+    private final int checkLabelIntervalMs;
 
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
@@ -123,6 +124,7 @@ public class StreamLoadProperties implements Serializable {
         this.retryIntervalInMs = builder.retryIntervalInMs;
 
         this.headers = Collections.unmodifiableMap(builder.headers);
+        this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
     }
 
     public boolean isEnableTransaction() {
@@ -236,6 +238,10 @@ public class StreamLoadProperties implements Serializable {
         return headers;
     }
 
+    public int getCheckLabelIntervalMs() {
+        return checkLabelIntervalMs;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -271,6 +277,7 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
+        private int checkLabelIntervalMs = 100;
 
         public Builder jdbcUrl(String jdbcUrl) {
             this.jdbcUrl = jdbcUrl;
@@ -432,6 +439,10 @@ public class StreamLoadProperties implements Serializable {
         public Builder addHeaders(Map<String, String> headers) {
             this.headers.putAll(headers);
             return this;
+        }
+
+        public void setCheckLabelIntervalMs(int checkLabelIntervalMs) {
+            this.checkLabelIntervalMs = checkLabelIntervalMs;
         }
 
         public StreamLoadProperties build() {

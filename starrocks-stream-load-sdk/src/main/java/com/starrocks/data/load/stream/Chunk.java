@@ -31,18 +31,30 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class Chunk {
 
+    private final long createTimeMs;
     private final StreamLoadDataFormat format;
     private final LinkedList<byte[]> buffer;
     private final AtomicLong rowBytes;
     private final AtomicLong chunkBytes;
+    private final long chunkId;
 
-    public Chunk(StreamLoadDataFormat format) {
+    public Chunk(StreamLoadDataFormat format, long chunkId) {
+        this.createTimeMs = System.currentTimeMillis();
         this.format = format;
         this.buffer = new LinkedList<>();
         this.rowBytes = new AtomicLong();
         this.chunkBytes = new AtomicLong();
         chunkBytes.addAndGet(format.first().length);
         chunkBytes.addAndGet(format.end().length);
+        this.chunkId = chunkId;
+    }
+
+    public long getCreateTimeMs() {
+        return createTimeMs;
+    }
+
+    public long getChunkId() {
+        return chunkId;
     }
 
     public void addRow(byte[] data) {
@@ -65,6 +77,10 @@ public class Chunk {
 
     public long estimateChunkSize(byte[] data) {
         return chunkBytes.get() + data.length + format.delimiter().length;
+    }
+
+    public long estimateChunkSize() {
+        return chunkBytes.get() + format.delimiter().length;
     }
 
     public Iterator<byte[]> iterator() {

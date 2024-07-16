@@ -69,10 +69,10 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
     protected StreamLoadProperties properties;
     private StreamLoadManager manager;
 
-    private HttpClientBuilder clientBuilder;
-    private Header[] defaultHeaders;
+    protected HttpClientBuilder clientBuilder;
+    protected Header[] defaultHeaders;
 
-    private ScheduledExecutorService executorService;
+    protected ScheduledExecutorService executorService;
 
     private boolean enableTransaction = false;
 
