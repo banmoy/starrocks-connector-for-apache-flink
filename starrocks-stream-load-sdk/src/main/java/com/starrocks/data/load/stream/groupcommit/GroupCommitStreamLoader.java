@@ -84,7 +84,8 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             request.setLabel(label);
             httpPut.addHeader("label", label);
 
-            LOG.info("Stream loading, label: {}, db: {}, table: {}, request : {}", label, database, table, httpPut);
+            LOG.info("Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
+                    database, table, label, request.getChunk().getChunkId());
             try (CloseableHttpClient client = clientBuilder.build()) {
                 long startNanoTime = System.nanoTime();
                 String responseBody;
@@ -92,8 +93,8 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                     responseBody = parseHttpResponse("load", database, table, label, response);
                 }
 
-                LOG.info("Stream load completed, label : {}, database : {}, table : {}, body : {}",
-                        label, database, table, responseBody);
+                LOG.info("Receive group commit load response, db: {}, table: {}, user label: {}, chunkId: {}, " +
+                                "response: {}", database, table, label, request.getChunk().getChunkId(), responseBody);
 
                 StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
                 StreamLoadResponse.StreamLoadResponseBody streamLoadBody =
@@ -102,7 +103,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                 String status = streamLoadBody.getStatus();
                 if (status == null) {
                     throw new StreamLoadFailException(String.format("Stream load status is null. db: %s, table: %s, " +
-                            "label: %s, response body: %s", database, table, label, responseBody));
+                            "user label: %s, response body: %s", database, table, label, responseBody));
                 }
 
                 if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
@@ -110,7 +111,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                     request.setResponse(streamLoadResponse);
                     waitLabelAsync(request);
                 } else {
-                    String errorMsg = String.format("Stream load failed because of error, db: %s, table: %s, label: %s, " +
+                    String errorMsg = String.format("Stream load failed because of error, db: %s, table: %s, user label: %s, " +
                                     "\nresponseBody: %s", database, table, label, responseBody);
                     throw new StreamLoadFailException(errorMsg, streamLoadBody);
                 }
@@ -118,21 +119,21 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                 throw e;
             }  catch (Exception e) {
                 String errorMsg = String.format("Stream load failed because of unknown exception, db: %s, table: %s, " +
-                        "label: %s", database, table, label);
+                        "user label: %s", database, table, label);
                 throw new StreamLoadFailException(errorMsg, e);
             }
         } catch (Exception e) {
-            LOG.error("Exception happens when sending data, thread: {}", Thread.currentThread().getName(), e);
             groupCommitTable.loadFinish(request, e);
         }
     }
 
     private void waitLabelAsync(LoadRequest request) {
         GroupCommitTable table = request.getTable();
+        long leftTimeMs = request.getResponse().getBody().getLeftTimeMs();
+        long expectFinishTimeMs = leftTimeMs > 0 ? System.currentTimeMillis() + leftTimeMs : -1;
         CompletableFuture<TransactionStatus> future = labelManager.getLabelFinalStatusAsync(
                     TableId.of(table.getDatabase(), table.getTable()),
-                    request.getResponse().getBody().getLabel(),
-                    request.getResponse().getBody().getLeftTimeMs())
+                    request.getResponse().getBody().getLabel(), expectFinishTimeMs)
                 .whenCompleteAsync(
                         (status, throwable) -> dealLabelStatus(request, status, throwable),
                         executorService);

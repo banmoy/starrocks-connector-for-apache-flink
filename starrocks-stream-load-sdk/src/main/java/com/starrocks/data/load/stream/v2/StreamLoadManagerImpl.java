@@ -238,10 +238,12 @@ public class StreamLoadManagerImpl implements StreamLoadManager, Serializable {
         }
     }
 
+    @Override
     public void setStreamLoadListener(StreamLoadListener streamLoadListener) {
         this.streamLoadListener = streamLoadListener;
     }
 
+    @Override
     public void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
         this.labelGeneratorFactory = labelGeneratorFactory;
     }
@@ -387,6 +389,7 @@ public class StreamLoadManagerImpl implements StreamLoadManager, Serializable {
         return snapshot;
     }
 
+    @Override
     public StreamLoader getStreamLoader() {
         return streamLoader;
     }

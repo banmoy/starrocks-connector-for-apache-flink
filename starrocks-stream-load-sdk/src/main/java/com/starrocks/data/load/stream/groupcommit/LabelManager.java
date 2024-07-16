@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.io.Serializable;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -39,14 +40,17 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class LabelManager implements Closeable {
+public class LabelManager implements Closeable, Serializable {
 
     private static final Logger LOG = LoggerFactory.getLogger(LabelManager.class);
+
+    private static final long serialVersionUID = 1L;
 
     private final String[] hosts;
     private final String user;
     private final String password;
     private final long retryIntervalMs;
+    private final long timeoutMs;
     private final Map<TableId, TableLabelHolder> labelHolderMap;
     private transient ScheduledExecutorService scheduledExecutorService;
     private transient ObjectMapper objectMapper;
@@ -56,6 +60,7 @@ public class LabelManager implements Closeable {
         this.user = properties.getUsername();
         this.password = properties.getPassword();
         this.retryIntervalMs = properties.getCheckLabelIntervalMs();
+        this.timeoutMs = properties.getCheckLabelTimeoutMs();
         this.labelHolderMap = new ConcurrentHashMap<>();
     }
 
@@ -88,14 +93,18 @@ public class LabelManager implements Closeable {
         LabelMeta labelMeta = labelHolderMap.computeIfAbsent(tableId, key -> new TableLabelHolder(tableId))
                 .addLabel(label, expectFinishTimeMs);
         if (labelMeta.isScheduled.compareAndSet(false, true)) {
-            long delayMs = expectFinishTimeMs > 0 ? Math.max(0, System.currentTimeMillis() - expectFinishTimeMs) : retryIntervalMs;
+            long delayMs = expectFinishTimeMs > 0 ?
+                    Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) : retryIntervalMs;
             scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), delayMs, TimeUnit.MILLISECONDS);
+            LOG.info("Schedule to get label state, db: {}, table: {}, label: {}, delay: {}ms",
+                    tableId.db, tableId.table, label, delayMs);
         }
         return labelMeta.future;
     }
 
     public void clear() {
         labelHolderMap.values().forEach(TableLabelHolder::clear);
+        LOG.info("Clear label manager");
     }
 
     private void checkLabelState(LabelMeta labelMeta) {
@@ -105,6 +114,10 @@ public class LabelManager implements Closeable {
                     hosts[hostIndex], user, password, labelMeta.tableId.db, labelMeta.label, objectMapper);
             if (TransactionStatus.isFinalStatus(status)) {
                 labelMeta.future.complete(status);
+                labelMeta.finishTimeMs = System.currentTimeMillis();
+                long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
+                LOG.info("Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
+                        labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, costMs, labelMeta.numRetries, status);
                 return;
             }
             LOG.info("Label is not in final status, db: {}, table: {}, label: {}, status: {}",
@@ -114,9 +127,24 @@ public class LabelManager implements Closeable {
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, e);
         }
         TableLabelHolder holder = labelHolderMap.get(labelMeta.tableId);
-        if (holder != null && holder.getLabel(labelMeta.label) == labelMeta) {
-            scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), retryIntervalMs, TimeUnit.MILLISECONDS);
+        if (holder == null || holder.getLabel(labelMeta.label) != labelMeta) {
+            labelMeta.future.completeExceptionally(new RuntimeException("Label is discarded"));
+            LOG.error("Failed to retry to get label state because label is discarded, db: {}, table: {}, label: {}",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label);
+            return;
         }
+
+        if (System.currentTimeMillis() - labelMeta.createTimeMs >= timeoutMs) {
+            labelMeta.future.completeExceptionally(new RuntimeException("Get label state timeout"));
+            LOG.error("Failed to retry to get label state because of timeout, db: {}, table: {}, label: {}, timeout: {}ms",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, timeoutMs);
+            return;
+        }
+
+        labelMeta.numRetries += 1;
+        scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), retryIntervalMs, TimeUnit.MILLISECONDS);
+        LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
     }
 
     private static class TableLabelHolder {
@@ -147,6 +175,9 @@ public class LabelManager implements Closeable {
         long expectFinishTimeMs;
         CompletableFuture<TransactionStatus> future;
         AtomicBoolean isScheduled;
+        long createTimeMs;
+        int numRetries;
+        long finishTimeMs;
 
         LabelMeta(TableId tableId, String label, long expectFinishTimeMs) {
             this.tableId = tableId;
@@ -154,6 +185,8 @@ public class LabelManager implements Closeable {
             this.expectFinishTimeMs = expectFinishTimeMs;
             this.future = new CompletableFuture<>();
             this.isScheduled = new AtomicBoolean(false);
+            this.createTimeMs = System.currentTimeMillis();
+            this.numRetries = 0;
         }
     }
 }

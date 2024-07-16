@@ -20,6 +20,8 @@
 
 package com.starrocks.data.load.stream;
 
+import com.starrocks.data.load.stream.v2.StreamLoadListener;
+
 public interface StreamLoadManager {
 
     void init();
@@ -33,4 +35,16 @@ public interface StreamLoadManager {
     boolean commit(StreamLoadSnapshot snapshot);
     boolean abort(StreamLoadSnapshot snapshot);
     void close();
+
+    default StreamLoader getStreamLoader() {
+        throw new UnsupportedOperationException();
+    }
+
+    default void setStreamLoadListener(StreamLoadListener streamLoadListener) {
+       // ignore
+    }
+
+    default void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
+        // ignore
+    }
 }

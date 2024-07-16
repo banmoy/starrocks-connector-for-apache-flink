@@ -20,6 +20,7 @@
 
 package com.starrocks.data.load.stream.groupcommit;
 
+import com.starrocks.data.load.stream.EnvUtils;
 import com.starrocks.data.load.stream.LabelGeneratorFactory;
 import com.starrocks.data.load.stream.StreamLoadManager;
 import com.starrocks.data.load.stream.StreamLoadResponse;
@@ -95,6 +96,8 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
         this.cacheMonitorThread = new Thread(this::monitorCache, "starrocks-cache-monitor");
         this.cacheMonitorThread.setDaemon(true);
         this.cacheMonitorThread.start();
+
+        LOG.info("Init group commit manager, {}", EnvUtils.getGitInformation());
     }
 
     @Override
@@ -105,15 +108,14 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
             int bytes = groupCommitTable.write(row.getBytes(StandardCharsets.UTF_8));
             currentCacheBytes.addAndGet(bytes);
             if (LOG.isTraceEnabled()) {
-                LOG.trace("Write, database {}, table {}, row {}", database, table, row);
+                LOG.trace("Write record, database {}, table {}, row {}", database, table, row);
             }
             checkCacheFull();
         }
     }
 
     private void checkCacheFull() {
-        long cacheBytes = currentCacheBytes.get();
-        if (cacheBytes < maxWriteBlockCacheBytes) {
+        if (currentCacheBytes.get() < maxWriteBlockCacheBytes) {
             return;
         }
         lock.lock();
@@ -143,15 +145,28 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
                     cachedTables.addAll(tables.values());
                 }
                 Collections.shuffle(cachedTables);
-                long leftBytes = memoryBytes - maxCacheBytes;
+                long expectEvictBytes = memoryBytes - maxCacheBytes;
+                LOG.debug("Start to evict cache, maxCacheBytes: {}, cacheBytes: {}, inflightBytes: {}, expectEvictBytes: {}",
+                        maxWriteBlockCacheBytes, currentCacheBytes.get(), inflightBytes.get(), expectEvictBytes);
+                long evictedSize = 0;
+                int numTables = 0;
                 for (GroupCommitTable table : cachedTables) {
-                    if (leftBytes > 0) {
-                        leftBytes -= table.forceFlushChunk();
+                    if (evictedSize < expectEvictBytes) {
+                        long size = table.cacheEvict();
+                        evictedSize += size;
+                        numTables += 1;
+                        LOG.debug("Evict table, db: {}, table: {}, bytes: {}", table.getDatabase(), table.getTable(), size);
+                    } else {
+                        break;
                     }
                 }
+                LOG.debug("Finish to evict cache, maxCacheBytes: {}, cacheBytes: {}, inflightBytes: {}, " +
+                                "expectEvictBytes: {}, actualEvictBytes: {}, numTables: {}",
+                        maxWriteBlockCacheBytes, currentCacheBytes.get(), inflightBytes.get(), expectEvictBytes,
+                        evictedSize, numTables);
             }
             try {
-                Thread.sleep(100);
+                Thread.sleep(200);
             } catch (Exception e) {
                 // ignore
             }
@@ -160,13 +175,15 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
 
     public void onLoadStart(GroupCommitTable table, long dataSize) {
         inflightBytes.addAndGet(dataSize);
+        LOG.debug("Receive load start, db: {}, table: {}, dataSize: {}, inflightBytes: {}",
+                table.getDatabase(), table.getTable(), dataSize, inflightBytes.get());
     }
 
     public void onLoadSuccess(GroupCommitTable table, StreamLoadResponse response) {
         long cacheByteBeforeFlush = currentCacheBytes.getAndAdd(-response.getFlushBytes());
         inflightBytes.addAndGet(-response.getFlushBytes());
-        LOG.info("Receive load response, cacheByteBeforeFlush: {}, currentCacheBytes: {}",
-                cacheByteBeforeFlush, currentCacheBytes.get());
+        LOG.debug("Receive load success, db: {}, table: {}, cacheByteBeforeFlush: {}, currentCacheBytes: {}",
+                table.getDatabase(), table.getTable(), cacheByteBeforeFlush, currentCacheBytes.get());
         lock.lock();
         try {
             writable.signal();
@@ -177,6 +194,7 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
 
     public void onLoadFailure(GroupCommitTable table, Throwable throwable) {
         this.exception.compareAndSet(null, throwable);
+        LOG.debug("Receive load failure, db: {}, table: {}", table.getDatabase(), table.getTable(), throwable);
     }
 
     public Throwable getException() {
@@ -193,6 +211,7 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
                 throw new RuntimeException(e);
             }
         }
+        labelManager.clear();
     }
 
     @Override
@@ -249,10 +268,12 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
         return true;
     }
 
+    @Override
     public void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
         // ignore
     }
 
+    @Override
     public void setStreamLoadListener(StreamLoadListener streamLoadListener) {
     }
 

@@ -44,6 +44,24 @@ public class GroupCommitTable {
 
     private static final Logger LOG = LoggerFactory.getLogger(GroupCommitTable.class);
 
+    enum FlushChunkReason {
+
+        CHUNK_FULL (false),
+        CHUNK_DELAY (true),
+        CACHE_EVICT(true),
+        FLUSH (true);
+
+        boolean force;
+
+        FlushChunkReason(boolean force) {
+            this.force = force;
+        }
+
+        boolean isForce() {
+            return force;
+        }
+    }
+
     private final String database;
     private final String table;
     private final GroupCommitManager manager;
@@ -116,7 +134,7 @@ public class GroupCommitTable {
             chunk.addRow(row);
             cacheBytes.addAndGet(row.length);
             cacheRows.incrementAndGet();
-            switchChunk(false);
+            switchChunk(FlushChunkReason.CHUNK_FULL);
             return row.length;
         } finally {
             lock.unlock();
@@ -126,7 +144,7 @@ public class GroupCommitTable {
     public void flush() throws Exception {
         lock.lock();
         try {
-            switchChunk(true);
+            switchChunk(FlushChunkReason.FLUSH);
             long leftTimeoutNs = flushTimeoutMs * 1000000L;
             while (!inflightLoadRequests.isEmpty() && tableThrowable.get() == null) {
                 try {
@@ -156,20 +174,20 @@ public class GroupCommitTable {
             if (activeChunk == null || activeChunk.getChunkId() != chunkId) {
                 return;
             }
-            switchChunk(true);
+            switchChunk(FlushChunkReason.CHUNK_DELAY);
         } finally {
             lock.unlock();
         }
     }
 
-    public long forceFlushChunk() {
+    public long cacheEvict() {
         lock.lock();
         try {
             if (activeChunk == null || activeChunk.numRows() == 0) {
                 return 0;
             }
             long size = activeChunk.rowBytes();
-            switchChunk(true);
+            switchChunk(FlushChunkReason.CACHE_EVICT);
             return size;
         } finally {
             lock.unlock();
@@ -179,13 +197,17 @@ public class GroupCommitTable {
     private Chunk getActiveChunk() {
         if (activeChunk == null) {
             activeChunk = new Chunk(properties.getDataFormat(), chunkIdGenerator.incrementAndGet());
+            if (timer != null) {
+                timer.cancel(true);
+            }
             timer = streamLoader.scheduleFlush(this, activeChunk.getChunkId(), flushIntervalMs);
         }
         return activeChunk;
     }
 
-    private void switchChunk(boolean force) {
-        if (activeChunk == null || (!force && activeChunk.estimateChunkSize() < chunkSize)) {
+    private void switchChunk(FlushChunkReason reason) {
+        if (activeChunk == null ||
+                (reason == FlushChunkReason.CHUNK_FULL && activeChunk.estimateChunkSize() < chunkSize)) {
             return;
         }
 
@@ -196,17 +218,17 @@ public class GroupCommitTable {
             timer = null;
         }
         if (inactiveChunk.numRows() > 0) {
-            flushChunk(inactiveChunk);
+            flushChunk(inactiveChunk, reason);
         }
     }
 
-    private void flushChunk(Chunk chunk) {
+    private void flushChunk(Chunk chunk, FlushChunkReason reason) {
         LoadRequest request = new LoadRequest(this, chunk);
         inflightLoadRequests.put(chunk.getChunkId(), request);
         manager.onLoadStart(this, chunk.rowBytes());
         streamLoader.sendLoad(request, 0);
-        LOG.info("Flush chunk, db: {}, table: {}, rows: {}, bytes: {}",
-                database, table, chunk.numRows(), chunk.rowBytes());
+        LOG.info("Flush chunk, db: {}, table: {}, chunkId: {}, rows: {}, bytes: {}, reason: {}",
+                database, table, chunk.getChunkId(), chunk.numRows(), chunk.rowBytes(), reason);
     }
 
     public void loadFinish(LoadRequest request, Throwable throwable) {
@@ -216,15 +238,15 @@ public class GroupCommitTable {
                 request.incRetries();
                 request.reset();
                 streamLoader.sendLoad(request, retryIntervalInMs);
-                LOG.info("Retry to flush chunk, db: {}, table: {}, chunk id: {}, retry: {}",
-                        database, table, request.getChunk().getChunkId(), request.getRetries());
+                LOG.warn("Retry to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, last exception",
+                        database, table, request.getChunk().getChunkId(), request.getRetries(), throwable);
                 return;
             }
 
-            LOG.error("Failed to flush chunk for db: {}, table: {} after {} times retry, the last exception is",
-                    database, table, request.getRetries(), throwable);
             tableThrowable.compareAndSet(null, throwable);
             manager.onLoadFailure(this, throwable);
+            LOG.error("Failed to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, last exception",
+                    database, table, request.getChunk().getChunkId(), request.getRetries(), throwable);
         } else {
             Chunk chunk = request.getChunk();
             cacheBytes.addAndGet(-chunk.rowBytes());
@@ -232,6 +254,8 @@ public class GroupCommitTable {
             request.getResponse().setFlushBytes(chunk.rowBytes());
             request.getResponse().setFlushRows(chunk.numRows());
             manager.onLoadSuccess(this, request.getResponse());
+            LOG.info("Success to flush chunk, db: {}, table: {}, chunkId: {}",
+                    database, table, request.getChunk().getChunkId());
         }
         lock.lock();
         try {

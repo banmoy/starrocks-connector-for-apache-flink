@@ -20,9 +20,11 @@
 
 package com.starrocks.data.load.stream.v2;
 
+import com.starrocks.data.load.stream.LabelGeneratorFactory;
 import com.starrocks.data.load.stream.StreamLoadManager;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.StreamLoadSnapshot;
+import com.starrocks.data.load.stream.StreamLoader;
 import com.starrocks.data.load.stream.groupcommit.GroupCommitManager;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 
@@ -86,5 +88,20 @@ public class StreamLoadManagerV2 implements StreamLoadManager, Serializable {
     @Override
     public void close() {
         manager.close();
+    }
+
+    @Override
+    public void setStreamLoadListener(StreamLoadListener streamLoadListener) {
+        manager.setStreamLoadListener(streamLoadListener);
+    }
+
+    @Override
+    public void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
+        manager.setLabelGeneratorFactory(labelGeneratorFactory);
+    }
+
+    @Override
+    public StreamLoader getStreamLoader() {
+        return manager.getStreamLoader();
     }
 }

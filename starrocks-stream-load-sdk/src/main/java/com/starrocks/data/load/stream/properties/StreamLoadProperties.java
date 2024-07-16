@@ -90,6 +90,7 @@ public class StreamLoadProperties implements Serializable {
     private final int retryIntervalInMs;
     private final Map<String, String> headers;
     private final int checkLabelIntervalMs;
+    private final int checkLabelTimeoutMs;
 
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
@@ -125,6 +126,7 @@ public class StreamLoadProperties implements Serializable {
 
         this.headers = Collections.unmodifiableMap(builder.headers);
         this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
+        this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
     }
 
     public boolean isEnableTransaction() {
@@ -242,6 +244,10 @@ public class StreamLoadProperties implements Serializable {
         return checkLabelIntervalMs;
     }
 
+    public int getCheckLabelTimeoutMs() {
+        return checkLabelTimeoutMs;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -278,6 +284,7 @@ public class StreamLoadProperties implements Serializable {
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
         private int checkLabelIntervalMs = 100;
+        private int checkLabelTimeoutMs = 60000;
 
         public Builder jdbcUrl(String jdbcUrl) {
             this.jdbcUrl = jdbcUrl;
@@ -441,8 +448,14 @@ public class StreamLoadProperties implements Serializable {
             return this;
         }
 
-        public void setCheckLabelIntervalMs(int checkLabelIntervalMs) {
+        public Builder setCheckLabelIntervalMs(int checkLabelIntervalMs) {
             this.checkLabelIntervalMs = checkLabelIntervalMs;
+            return this;
+        }
+
+        public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
+            this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+            return this;
         }
 
         public StreamLoadProperties build() {
