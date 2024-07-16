@@ -737,4 +737,13 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
         map.put("sink.at-least-once.use-transaction-stream-load", "false");
         testConfigurationBase(map, env -> null);
     }
+
+    @Test
+    public void testGroupCommit() throws Exception {
+        Map<String, String> options = new HashMap<>();
+        options.put("sink.properties.group_commit", "async");
+        options.put("sink.properties.format", "json");
+        options.put("sink.properties.compression", "lz4_frame");
+        testConfigurationBase(options, env -> null);
+    }
 }

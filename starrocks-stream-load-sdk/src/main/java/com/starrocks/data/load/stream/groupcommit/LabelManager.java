@@ -49,8 +49,8 @@ public class LabelManager implements Closeable, Serializable {
     private final String[] hosts;
     private final String user;
     private final String password;
-    private final long retryIntervalMs;
-    private final long timeoutMs;
+    private final long checkLabelIntervalMs;
+    private final long checkLabelTimeoutMs;
     private final Map<TableId, TableLabelHolder> labelHolderMap;
     private transient ScheduledExecutorService scheduledExecutorService;
     private transient ObjectMapper objectMapper;
@@ -59,8 +59,8 @@ public class LabelManager implements Closeable, Serializable {
         this.hosts = properties.getLoadUrls();
         this.user = properties.getUsername();
         this.password = properties.getPassword();
-        this.retryIntervalMs = properties.getCheckLabelIntervalMs();
-        this.timeoutMs = properties.getCheckLabelTimeoutMs();
+        this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
+        this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
         this.labelHolderMap = new ConcurrentHashMap<>();
     }
 
@@ -78,6 +78,8 @@ public class LabelManager implements Closeable, Serializable {
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // filed names in StreamLoadResponseBody are case-insensitive
         objectMapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
+        LOG.info("Start label manager, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}",
+                checkLabelIntervalMs, checkLabelTimeoutMs);
     }
 
     @Override
@@ -94,7 +96,7 @@ public class LabelManager implements Closeable, Serializable {
                 .addLabel(label, expectFinishTimeMs);
         if (labelMeta.isScheduled.compareAndSet(false, true)) {
             long delayMs = expectFinishTimeMs > 0 ?
-                    Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) : retryIntervalMs;
+                    Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) : checkLabelIntervalMs;
             scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), delayMs, TimeUnit.MILLISECONDS);
             LOG.info("Schedule to get label state, db: {}, table: {}, label: {}, delay: {}ms",
                     tableId.db, tableId.table, label, delayMs);
@@ -134,15 +136,15 @@ public class LabelManager implements Closeable, Serializable {
             return;
         }
 
-        if (System.currentTimeMillis() - labelMeta.createTimeMs >= timeoutMs) {
+        if (System.currentTimeMillis() - labelMeta.createTimeMs >= checkLabelTimeoutMs) {
             labelMeta.future.completeExceptionally(new RuntimeException("Get label state timeout"));
             LOG.error("Failed to retry to get label state because of timeout, db: {}, table: {}, label: {}, timeout: {}ms",
-                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, timeoutMs);
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, checkLabelTimeoutMs);
             return;
         }
 
         labelMeta.numRetries += 1;
-        scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), retryIntervalMs, TimeUnit.MILLISECONDS);
+        scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), checkLabelIntervalMs, TimeUnit.MILLISECONDS);
         LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
                 labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
     }

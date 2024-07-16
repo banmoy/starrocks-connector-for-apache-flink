@@ -157,6 +157,14 @@ public class StarRocksSinkOptions implements Serializable {
                     "in the coming 2.0. Note that it's not compatible after changing the flag, that's, you can't recover from " +
                     "the previous job after changing the flag.");
 
+    public static final ConfigOption<Integer> SINK_GROUP_COMMIT_CHECK_LABEL_INTERVAL_MS =
+            ConfigOptions.key("sink.group-commit.check-label.interval-ms")
+                    .intType().defaultValue(100);
+
+    public static final ConfigOption<Integer> SINK_GROUP_COMMIT_CHECK_LABEL_TIMEOUT_MS =
+            ConfigOptions.key("sink.group-commit.check-label.timeout-ms")
+                    .intType().defaultValue(60000);
+
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
     // Sink semantic
@@ -377,6 +385,14 @@ public class StarRocksSinkOptions implements Serializable {
         return tableOptions.get(SINK_USE_NEW_SINK_API);
     }
 
+    public int getGroupCommitCheckLabelIntervalMs() {
+        return tableOptions.get(SINK_GROUP_COMMIT_CHECK_LABEL_INTERVAL_MS);
+    }
+
+    public int getGroupCommitCheckLabelTimeoutMs() {
+        return tableOptions.get(SINK_GROUP_COMMIT_CHECK_LABEL_TIMEOUT_MS);
+    }
+
     private void validateStreamLoadUrl() {
         tableOptions.getOptional(LOAD_URL).ifPresent(urlList -> {
             for (String host : urlList) {
@@ -573,7 +589,9 @@ public class StarRocksSinkOptions implements Serializable {
                 // TODO not support retry currently
                 .maxRetries(0)
                 .retryIntervalInMs(getRetryIntervalMs())
-                .addHeaders(streamLoadProperties);
+                .addHeaders(streamLoadProperties)
+                .setCheckLabelIntervalMs(getGroupCommitCheckLabelIntervalMs())
+                .setCheckLabelTimeoutMs(getGroupCommitCheckLabelTimeoutMs());
 
         for (StreamLoadTableProperties tableProperties : tablePropertiesList) {
             builder.addTableProperties(tableProperties);
