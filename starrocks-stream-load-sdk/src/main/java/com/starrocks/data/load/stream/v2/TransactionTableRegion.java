@@ -276,7 +276,7 @@ public class TransactionTableRegion implements TableRegion {
 
         if (label == null) {
             // if the data has never been flushed (label == null), the commit should fail
-            // so that StreamLoadManagerV2#init will schedule to flush the data first, and
+            // so that StreamLoadManagerImpl#init will schedule to flush the data first, and
             // then trigger commit again
             boolean commitSuccess = cacheBytes.get() == 0;
             state.compareAndSet(State.COMMITTING, State.ACTIVE);
