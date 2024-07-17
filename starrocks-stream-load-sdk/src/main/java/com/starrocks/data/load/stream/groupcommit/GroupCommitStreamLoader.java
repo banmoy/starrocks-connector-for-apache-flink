@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 
 public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
-    private static final Logger LOG = LoggerFactory.getLogger(DefaultStreamLoader.class);
+    private static final Logger LOG = LoggerFactory.getLogger(GroupCommitStreamLoader.class);
 
     private final LabelManager labelManager;
 

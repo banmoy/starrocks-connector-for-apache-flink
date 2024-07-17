@@ -51,6 +51,7 @@ public class LabelManager implements Closeable, Serializable {
     private final String password;
     private final long checkLabelIntervalMs;
     private final long checkLabelTimeoutMs;
+    private final int threadPoolSize;
     private final Map<TableId, TableLabelHolder> labelHolderMap;
     private transient ScheduledExecutorService scheduledExecutorService;
     private transient ObjectMapper objectMapper;
@@ -61,12 +62,13 @@ public class LabelManager implements Closeable, Serializable {
         this.password = properties.getPassword();
         this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
         this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
+        this.threadPoolSize = properties.getIoThreadCount();
         this.labelHolderMap = new ConcurrentHashMap<>();
     }
 
     public void start() {
         this.scheduledExecutorService = new ScheduledThreadPoolExecutor(
-                Integer.MAX_VALUE,
+                threadPoolSize,
                 r -> {
                     Thread thread = new Thread(null, r, "LabelManager-" + UUID.randomUUID());
                     thread.setDaemon(true);
@@ -78,8 +80,8 @@ public class LabelManager implements Closeable, Serializable {
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // filed names in StreamLoadResponseBody are case-insensitive
         objectMapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
-        LOG.info("Start label manager, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}",
-                checkLabelIntervalMs, checkLabelTimeoutMs);
+        LOG.info("Start label manager, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}, threadPoolSize: {}",
+                checkLabelIntervalMs, checkLabelTimeoutMs, threadPoolSize);
     }
 
     @Override
