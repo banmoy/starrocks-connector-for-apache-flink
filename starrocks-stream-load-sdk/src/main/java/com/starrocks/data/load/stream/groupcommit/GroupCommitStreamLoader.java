@@ -1,3 +1,4 @@
+
 /*
  * Copyright 2021-present StarRocks, Inc. All rights reserved.
  *
@@ -83,6 +84,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             String label = UUID.randomUUID().toString();
             request.setLabel(label);
             httpPut.addHeader("label", label);
+            httpPut.addHeader("client_time_ms", String.valueOf(System.currentTimeMillis()));
 
             LOG.info("Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
                     database, table, label, request.getChunk().getChunkId());
