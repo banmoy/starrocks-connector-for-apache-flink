@@ -23,9 +23,11 @@ package com.starrocks.data.load.stream.groupcommit;
 
 import com.starrocks.data.load.stream.DefaultStreamLoader;
 import com.starrocks.data.load.stream.StreamLoadConstants;
+import com.starrocks.data.load.stream.StreamLoadManager;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
+import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -34,10 +36,12 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 public class GroupCommitStreamLoader extends DefaultStreamLoader {
@@ -50,6 +54,22 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         this.labelManager = labelManager;
     }
 
+    @Override
+    public void start(StreamLoadProperties properties, StreamLoadManager manager) {
+        FeMetaService.FeMetaConfig config = new FeMetaService.FeMetaConfig();
+        config.properties = properties;
+        config.numExecutors = 2;
+        config.updateIntervalMs = 60000;
+        FeMetaService.getInstance().takeRef(config);
+        super.start(properties, manager);
+    }
+
+    @Override
+    public void close() {
+        super.close();
+        FeMetaService.getInstance().releaseRef();
+    }
+
     public ScheduledFuture<?> scheduleFlush(GroupCommitTable table, long chunkId, int delayMs) {
         return executorService.schedule(() -> table.checkFlushInterval(chunkId), delayMs, TimeUnit.MILLISECONDS);
     }
@@ -58,12 +78,27 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         executorService.schedule(() -> send(request), delayMs, TimeUnit.MILLISECONDS);
     }
 
+    // TODO check FE availability without connection each time
+    @Override
+    protected String getAvailableHost() {
+        String[] hosts = properties.getLoadUrls();
+        return hosts.length == 0 ? null : hosts[ThreadLocalRandom.current().nextInt(hosts.length)];
+    }
+
+    private String getAvailableBeHost(String db, String table) throws Exception {
+        CompletableFuture<List<WorkerAddress>> future = FeMetaService.getInstance()
+                .getTableBeAddress(TableId.of(db, table));
+        List<WorkerAddress> addresses = future.get();
+        return (addresses == null || addresses.isEmpty()) ? null
+                : "http://" + addresses.get(ThreadLocalRandom.current().nextInt(addresses.size())).toString();
+    }
+
     private void send(LoadRequest request) {
         GroupCommitTable groupCommitTable = request.getTable();
         String database = groupCommitTable.getDatabase();
         String table = groupCommitTable.getTable();
         try {
-            String host = getAvailableHost();
+            String host = getAvailableBeHost(database, table);
             String sendUrl = getSendUrl(host, database, table);
 
             HttpPut httpPut = new HttpPut(sendUrl);
@@ -73,7 +108,6 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                     .setRedirectsEnabled(true)
                     .build());
             httpPut.setEntity(groupCommitTable.getHttpEntity(request.getChunk()));
-
             httpPut.setHeaders(defaultHeaders);
             StreamLoadTableProperties tableProperties = groupCommitTable.getProperties();
             for (Map.Entry<String, String> entry : tableProperties.getProperties().entrySet()) {
