@@ -48,10 +48,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
     private static final Logger LOG = LoggerFactory.getLogger(GroupCommitStreamLoader.class);
 
-    private final LabelManager labelManager;
-
-    public GroupCommitStreamLoader(LabelManager labelManager) {
-        this.labelManager = labelManager;
+    public GroupCommitStreamLoader() {
     }
 
     @Override
@@ -61,12 +58,18 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         config.numExecutors = 2;
         config.updateIntervalMs = 60000;
         FeMetaService.getInstance().takeRef(config);
+
+        LabelMetaService.LabelMetaConfig labelMetaConfig = new LabelMetaService.LabelMetaConfig();
+        labelMetaConfig.properties = properties;
+        LabelMetaService.getInstance().takeRef(labelMetaConfig);
+
         super.start(properties, manager);
     }
 
     @Override
     public void close() {
         super.close();
+        LabelMetaService.getInstance().releaseRef();
         FeMetaService.getInstance().releaseRef();
     }
 
@@ -167,7 +170,8 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         GroupCommitTable table = request.getTable();
         long leftTimeMs = request.getResponse().getBody().getLeftTimeMs();
         long expectFinishTimeMs = leftTimeMs > 0 ? System.currentTimeMillis() + leftTimeMs : -1;
-        CompletableFuture<TransactionStatus> future = labelManager.getLabelFinalStatusAsync(
+        CompletableFuture<TransactionStatus> future = LabelMetaService.getInstance()
+                .getLabelFinalStatusAsync(
                     TableId.of(table.getDatabase(), table.getTable()),
                     request.getResponse().getBody().getLabel(), expectFinishTimeMs)
                 .whenCompleteAsync(

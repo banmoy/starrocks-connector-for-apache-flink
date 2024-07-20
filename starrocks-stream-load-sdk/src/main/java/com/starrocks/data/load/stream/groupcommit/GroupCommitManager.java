@@ -57,7 +57,6 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
     private static final int DEFAULT_FLUSH_TIMEOUT_MS = 600000;
 
     private final StreamLoadProperties properties;
-    private final LabelManager labelManager;
     private final GroupCommitStreamLoader streamLoader;
     private final int maxRetries;
     private final int retryIntervalInMs;
@@ -76,8 +75,7 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
 
     public GroupCommitManager(StreamLoadProperties properties) {
         this.properties = properties;
-        this.labelManager = new LabelManager(properties);
-        this.streamLoader = new GroupCommitStreamLoader(labelManager);
+        this.streamLoader = new GroupCommitStreamLoader();
         this.maxRetries = properties.getMaxRetries();
         this.retryIntervalInMs = properties.getRetryIntervalInMs();
         this.flushIntervalMs = (int) properties.getExpectDelayTime();
@@ -91,7 +89,6 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
     @Override
     public void init() {
         this.closed = new AtomicBoolean(false);
-        this.labelManager.start();
         this.streamLoader.start(properties, this);
         this.cacheMonitorThread = new Thread(this::monitorCache, "starrocks-cache-monitor");
         this.cacheMonitorThread.setDaemon(true);
@@ -211,7 +208,6 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
                 throw new RuntimeException(e);
             }
         }
-        labelManager.clear();
     }
 
     @Override
@@ -221,7 +217,6 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
             cacheMonitorThread.interrupt();
         }
         streamLoader.close();
-        labelManager.close();
     }
 
     private void checkException() {

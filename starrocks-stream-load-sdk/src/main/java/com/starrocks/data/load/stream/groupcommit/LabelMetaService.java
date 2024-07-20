@@ -25,12 +25,14 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
-import java.io.Serializable;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,56 +42,80 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class LabelManager implements Closeable, Serializable {
+public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaConfig> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(LabelManager.class);
+    private static final Logger LOG = LoggerFactory.getLogger(LabelMetaService.class);
 
-    private static final long serialVersionUID = 1L;
+    private static final LabelMetaService INSTANCE = new LabelMetaService();
 
-    private final String[] hosts;
-    private final String user;
-    private final String password;
-    private final long checkLabelIntervalMs;
-    private final long checkLabelTimeoutMs;
-    private final int threadPoolSize;
-    private final Map<TableId, TableLabelHolder> labelHolderMap;
-    private transient ScheduledExecutorService scheduledExecutorService;
-    private transient ObjectMapper objectMapper;
+    private final ConcurrentHashMap<TableId, TableLabelHolder> labelHolderMap;
 
-    public LabelManager(StreamLoadProperties properties) {
-        this.hosts = properties.getLoadUrls();
-        this.user = properties.getUsername();
-        this.password = properties.getPassword();
-        this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
-        this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
-        this.threadPoolSize = properties.getIoThreadCount();
-        this.labelHolderMap = new ConcurrentHashMap<>();
-    }
+    private String[] hosts;
+    private String user;
+    private String password;
+    private long checkLabelIntervalMs;
+    private long checkLabelTimeoutMs;
+    private ScheduledExecutorService scheduledExecutorService;
+    private final ObjectMapper objectMapper;
+    private CloseableHttpClient httpClient;
 
-    public void start() {
-        this.scheduledExecutorService = new ScheduledThreadPoolExecutor(
-                threadPoolSize,
-                r -> {
-                    Thread thread = new Thread(null, r, "LabelManager-" + UUID.randomUUID());
-                    thread.setDaemon(true);
-                    return thread;
-                });
-
+    public LabelMetaService() {
         this.objectMapper = new ObjectMapper();
         // StreamLoadResponseBody does not contain all fields returned by StarRocks
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // filed names in StreamLoadResponseBody are case-insensitive
         objectMapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
-        LOG.info("Start label manager, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}, threadPoolSize: {}",
+        this.labelHolderMap = new ConcurrentHashMap<>();
+    }
+
+    public static LabelMetaService getInstance() {
+        return INSTANCE;
+    }
+
+    @Override
+    protected void init(LabelMetaConfig labelMetaConfig) {
+        StreamLoadProperties properties = labelMetaConfig.properties;
+        this.hosts = properties.getLoadUrls();
+        this.user = properties.getUsername();
+        this.password = properties.getPassword();
+        this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
+        this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
+        int threadPoolSize = properties.getIoThreadCount();
+        this.scheduledExecutorService = new ScheduledThreadPoolExecutor(
+                threadPoolSize,
+                r -> {
+                    Thread thread = new Thread(null, r, "LabelMetaService-" + UUID.randomUUID());
+                    thread.setDaemon(true);
+                    return thread;
+                });
+
+        PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+        cm.setDefaultMaxPerRoute(threadPoolSize);
+        cm.setMaxTotal(threadPoolSize);
+        httpClient = HttpClients.custom()
+                .setConnectionManager(cm)
+                .build();
+        this.scheduledExecutorService.schedule(this::cleanUselessLabels, 30, TimeUnit.SECONDS);
+        LOG.info("Init label meta service, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}, threadPoolSize: {}",
                 checkLabelIntervalMs, checkLabelTimeoutMs, threadPoolSize);
     }
 
     @Override
-    public void close() {
-        if (scheduledExecutorService != null) {
+    protected void reset() {
+        if (this.scheduledExecutorService != null) {
             this.scheduledExecutorService.shutdownNow();
+            this.scheduledExecutorService = null;
         }
-        LOG.info("Stop label manager");
+        if (httpClient != null) {
+            try {
+                httpClient.close();
+            } catch (Exception e) {
+                LOG.error("Failed to close client", e);
+            }
+            this.httpClient = null;
+        }
+        labelHolderMap.clear();
+        LOG.info("Reset label meta service");
     }
 
     public CompletableFuture<TransactionStatus> getLabelFinalStatusAsync(
@@ -106,16 +132,11 @@ public class LabelManager implements Closeable, Serializable {
         return labelMeta.future;
     }
 
-    public void clear() {
-        labelHolderMap.values().forEach(TableLabelHolder::clear);
-        LOG.info("Clear label manager");
-    }
-
     private void checkLabelState(LabelMeta labelMeta) {
         try {
             int hostIndex = ThreadLocalRandom.current().nextInt(hosts.length);
-            TransactionStatus status = LabelUtils.getLabelStaus(
-                    hosts[hostIndex], user, password, labelMeta.tableId.db, labelMeta.label, objectMapper);
+            TransactionStatus status = LabelUtils.getLabelStatus(
+                    httpClient, hosts[hostIndex], user, password, labelMeta.tableId.db, labelMeta.label, objectMapper);
             if (TransactionStatus.isFinalStatus(status)) {
                 labelMeta.future.complete(status);
                 labelMeta.finishTimeMs = System.currentTimeMillis();
@@ -151,9 +172,16 @@ public class LabelManager implements Closeable, Serializable {
                 labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
     }
 
+    private void cleanUselessLabels() {
+        for (TableLabelHolder labelHolder : labelHolderMap.values()) {
+            labelHolder.cleanUselessLabels();
+        }
+        this.scheduledExecutorService.schedule(this::cleanUselessLabels, 30, TimeUnit.SECONDS);
+    }
+
     private static class TableLabelHolder {
         private final TableId tableId;
-        private final Map<String, LabelMeta> pendingLabels;
+        private final ConcurrentHashMap<String, LabelMeta> pendingLabels;
 
         public TableLabelHolder(TableId tableId) {
             this.tableId = tableId;
@@ -168,8 +196,21 @@ public class LabelManager implements Closeable, Serializable {
             return pendingLabels.get(label);
         }
 
-        public void clear() {
-            pendingLabels.clear();
+        public void cleanUselessLabels() {
+            List<String> uselessLabels = new ArrayList<>();
+            for (LabelMeta labelMeta : pendingLabels.values()) {
+                if (System.currentTimeMillis() - labelMeta.createTimeMs > 5 * 60 * 1000) {
+                    uselessLabels.add(labelMeta.label);
+                }
+            }
+
+            for (String label : uselessLabels) {
+                LabelMeta meta = pendingLabels.remove(label);
+                if (meta != null) {
+                    meta.future.completeExceptionally(new RuntimeException("Clean label because of expiration"));
+                    LOG.info("Clean useless label {}", meta.label);
+                }
+            }
         }
     }
 
@@ -192,5 +233,9 @@ public class LabelManager implements Closeable, Serializable {
             this.createTimeMs = System.currentTimeMillis();
             this.numRetries = 0;
         }
+    }
+
+    public static class LabelMetaConfig {
+        StreamLoadProperties properties;
     }
 }
