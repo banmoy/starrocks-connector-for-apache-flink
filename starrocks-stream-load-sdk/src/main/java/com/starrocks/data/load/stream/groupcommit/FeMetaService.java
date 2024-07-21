@@ -122,7 +122,7 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
         LOG.info("Reset fe meta service");
     }
 
-    public CompletableFuture<List<WorkerAddress>> getTableBeAddress(TableId tableId) {
+    public CompletableFuture<BeMetas> getTableBeMetas(TableId tableId) {
         return beInfoMap.computeIfAbsent(tableId, this::createTableInfo).futureRef.get();
     }
 
@@ -152,7 +152,7 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
                 try (CloseableHttpResponse response = client.execute(httpPut)) {
                     responseBody = parseHttpResponse(database, table, response);
                 }
-
+                LOG.info("Get table be info, db: {}, table: {}, response: {}", database, table, responseBody);
                 Response response = objectMapper.readValue(responseBody, Response.class);
                 String status = response.getStatus();
                 if (status == null) {
@@ -160,17 +160,28 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
                             "response body: %s", database, table, responseBody));
                 }
 
-                String beAddressList = response.getBeAddressList();
-                if (beAddressList != null && !beAddressList.isEmpty()) {
-                    List<WorkerAddress> addresses = parseAddresses(beAddressList);
-                    info.updateAddresses(addresses);
+                String httpAddressesStr = response.getHttpAddresses();
+                List<WorkerAddress> httpAddresses = null;
+                if (httpAddressesStr != null && !httpAddressesStr.isEmpty()) {
+                    httpAddresses = parseAddresses(httpAddressesStr);
                 } else {
                     throw new StreamLoadFailException(
-                            String.format("empty be addresses, db: %s, table: %s", database, table));
+                            String.format("empty http addresses, db: %s, table: %s", database, table));
                 }
+
+                String brpcAddressesStr = response.getBrpcAddresses();
+                List<WorkerAddress> brpcAddresses = null;
+                if (brpcAddressesStr != null && !brpcAddressesStr.isEmpty()) {
+                    brpcAddresses = parseAddresses(brpcAddressesStr);
+                } else {
+                    throw new StreamLoadFailException(
+                            String.format("empty brpc addresses, db: %s, table: %s", database, table));
+                }
+                info.updateAddresses(httpAddresses, brpcAddresses);
+
             }
         } catch (Exception e) {
-            LOG.error("Failed to get meta, db: {}, table: {}", database, table, e);
+            LOG.error("Failed to get be table info, db: {}, table: {}", database, table, e);
         }
         this.executorService.schedule(() -> getTableBeInfo(info), updateIntervalMs, TimeUnit.MILLISECONDS);
     }
@@ -235,23 +246,42 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
         return INSTANCE;
     }
 
+    public static class BeMetas {
+        List<WorkerAddress> httpAddresses;
+        List<WorkerAddress> brpcAddresses;
+
+        public BeMetas(List<WorkerAddress> httpAddresses, List<WorkerAddress> brpcAddresses) {
+            this.httpAddresses = httpAddresses;
+            this.brpcAddresses = brpcAddresses;
+        }
+
+        public List<WorkerAddress> getHttpAddresses() {
+            return httpAddresses;
+        }
+
+        public List<WorkerAddress> getBrpcAddresses() {
+            return brpcAddresses;
+        }
+    }
+
     private static class TableBeInfo {
         TableId tableId;
-        AtomicReference<CompletableFuture<List<WorkerAddress>>> futureRef;
+        AtomicReference<CompletableFuture<BeMetas>> futureRef;
 
         public TableBeInfo(TableId tableId) {
             this.tableId = tableId;
             this.futureRef = new AtomicReference<>(new CompletableFuture<>());
         }
 
-        public void updateAddresses(List<WorkerAddress> addresses) {
-            CompletableFuture<List<WorkerAddress>> oldFuture = futureRef.get();
-            if (oldFuture.complete(addresses)) {
+        public void updateAddresses(List<WorkerAddress> httpAddresses, List<WorkerAddress> brpcAddresses) {
+            BeMetas newMetas = new BeMetas(httpAddresses, brpcAddresses);
+            CompletableFuture<BeMetas> oldFuture = futureRef.get();
+            if (oldFuture.complete(newMetas)) {
                 return;
             }
 
-            CompletableFuture<List<WorkerAddress>> newFuture = new CompletableFuture<>();
-            newFuture.complete(addresses);
+            CompletableFuture<BeMetas> newFuture = new CompletableFuture<>();
+            newFuture.complete(newMetas);
             futureRef.compareAndSet(oldFuture, newFuture);
         }
     }
@@ -264,22 +294,31 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
 
     public static class Response {
         private String status;
-        String beAddressList;
+        private String httpAddresses;
+        private String brpcAddresses;
 
         public String getStatus() {
             return status;
-        }
-
-        public String getBeAddressList() {
-            return beAddressList;
         }
 
         public void setStatus(String status) {
             this.status = status;
         }
 
-        public void setBeAddressList(String beAddressList) {
-            this.beAddressList = beAddressList;
+        public String getHttpAddresses() {
+            return httpAddresses;
+        }
+
+        public void setHttpAddresses(String httpAddresses) {
+            this.httpAddresses = httpAddresses;
+        }
+
+        public String getBrpcAddresses() {
+            return brpcAddresses;
+        }
+
+        public void setBrpcAddresses(String brpcAddresses) {
+            this.brpcAddresses = brpcAddresses;
         }
     }
 }

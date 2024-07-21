@@ -81,6 +81,7 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
     private final AtomicBoolean start = new AtomicBoolean(false);
 
     protected volatile ObjectMapper objectMapper;
+    protected int timeout = 600;
 
     protected void enableTransaction() {
         this.enableTransaction = true;
@@ -274,6 +275,8 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
         Map<String, String> headers = new HashMap<>(properties.getHeaders());
         if (!headers.containsKey("timeout")) {
             headers.put("timeout", "600");
+        } else {
+            timeout = Integer.parseInt(headers.get("timeout"));
         }
         headers.put(HttpHeaders.AUTHORIZATION, StreamLoadUtils.getBasicAuthHeader(properties.getUsername(), properties.getPassword()));
         headers.put(HttpHeaders.EXPECT, "100-continue");

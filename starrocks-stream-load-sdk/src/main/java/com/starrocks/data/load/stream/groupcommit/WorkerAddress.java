@@ -20,16 +20,43 @@
 
 package com.starrocks.data.load.stream.groupcommit;
 
+import java.util.Objects;
+
 public class WorkerAddress {
     public String host;
-    public String httpPort;
+    public String port;
 
-    public WorkerAddress(String host, String httpPort) {
+    public WorkerAddress(String host, String port) {
         this.host = host;
-        this.httpPort = httpPort;
+        this.port = port;
     }
 
-    public String toString () {
-        return host + ":" + httpPort;
+    public String getHost() {
+        return host;
+    }
+
+    public String getPort() {
+        return port;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WorkerAddress that = (WorkerAddress) o;
+        return Objects.equals(host, that.host) && Objects.equals(port, that.port);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(host, port);
+    }
+
+    @Override
+    public String toString() {
+        return "WorkerAddress{" +
+                "host='" + host + '\'' +
+                ", port='" + port + '\'' +
+                '}';
     }
 }

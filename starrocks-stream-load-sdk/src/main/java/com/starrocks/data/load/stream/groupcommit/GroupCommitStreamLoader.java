@@ -21,6 +21,12 @@
 
 package com.starrocks.data.load.stream.groupcommit;
 
+import com.baidu.brpc.RpcContext;
+import com.baidu.brpc.client.RpcCallback;
+import com.baidu.brpc.client.RpcClientOptions;
+import com.baidu.brpc.client.channel.ChannelType;
+import com.baidu.brpc.loadbalance.LoadBalanceStrategy;
+import com.baidu.brpc.protocol.Options;
 import com.starrocks.data.load.stream.DefaultStreamLoader;
 import com.starrocks.data.load.stream.StreamLoadConstants;
 import com.starrocks.data.load.stream.StreamLoadManager;
@@ -29,6 +35,7 @@ import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
+import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPut;
@@ -36,10 +43,12 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -53,6 +62,22 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
     @Override
     public void start(StreamLoadProperties properties, StreamLoadManager manager) {
+        RpcClientOptions clientOptions = new RpcClientOptions();
+        clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
+        clientOptions.setConnectTimeoutMillis(1000);
+        clientOptions.setReadTimeoutMillis(1000);
+        clientOptions.setWriteTimeoutMillis(1000);
+        clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
+        clientOptions.setMaxTotalConnections(10);
+        clientOptions.setMinIdleConnections(2);
+        clientOptions.setMaxTryTimes(3);
+        clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
+        clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
+        clientOptions.setIoThreadNum(Runtime.getRuntime().availableProcessors());
+        clientOptions.setWorkThreadNum(Runtime.getRuntime().availableProcessors());
+        BrpcClientManager.BrpcConfig brpcConfig = new BrpcClientManager.BrpcConfig(clientOptions);
+        BrpcClientManager.getInstance().takeRef(brpcConfig);
+
         FeMetaService.FeMetaConfig config = new FeMetaService.FeMetaConfig();
         config.properties = properties;
         config.numExecutors = 2;
@@ -71,6 +96,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         super.close();
         LabelMetaService.getInstance().releaseRef();
         FeMetaService.getInstance().releaseRef();
+        BrpcClientManager.getInstance().releaseRef();
     }
 
     public ScheduledFuture<?> scheduleFlush(GroupCommitTable table, long chunkId, int delayMs) {
@@ -78,7 +104,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
     }
 
     public void sendLoad(LoadRequest request, int delayMs) {
-        executorService.schedule(() -> send(request), delayMs, TimeUnit.MILLISECONDS);
+        executorService.schedule(() -> sendBrpc(request), delayMs, TimeUnit.MILLISECONDS);
     }
 
     // TODO check FE availability without connection each time
@@ -88,20 +114,60 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         return hosts.length == 0 ? null : hosts[ThreadLocalRandom.current().nextInt(hosts.length)];
     }
 
-    private String getAvailableBeHost(String db, String table) throws Exception {
-        CompletableFuture<List<WorkerAddress>> future = FeMetaService.getInstance()
-                .getTableBeAddress(TableId.of(db, table));
-        List<WorkerAddress> addresses = future.get();
+    private String getAvailableBeHttpHost(String db, String table) throws Exception {
+        CompletableFuture<FeMetaService.BeMetas> future = FeMetaService.getInstance()
+                .getTableBeMetas(TableId.of(db, table));
+        List<WorkerAddress> addresses = future.get().getHttpAddresses();
         return (addresses == null || addresses.isEmpty()) ? null
                 : "http://" + addresses.get(ThreadLocalRandom.current().nextInt(addresses.size())).toString();
     }
 
-    private void send(LoadRequest request) {
+    private WorkerAddress getAvailableBeBrpcHost(String db, String table) throws Exception {
+        CompletableFuture<FeMetaService.BeMetas> future = FeMetaService.getInstance()
+                .getTableBeMetas(TableId.of(db, table));
+        List<WorkerAddress> addresses = future.get().getBrpcAddresses();
+        return (addresses == null || addresses.isEmpty()) ? null
+                : addresses.get(ThreadLocalRandom.current().nextInt(addresses.size()));
+    }
+
+    private void sendBrpc(LoadRequest loadRequest) {
+        GroupCommitTable groupCommitTable = loadRequest.getTable();
+        String database = groupCommitTable.getDatabase();
+        String table = groupCommitTable.getTable();
+        try {
+            WorkerAddress brpcAddress = getAvailableBeBrpcHost(database, table);
+            PBackendServiceAsync service = BrpcClientManager.getInstance().getBackendService(brpcAddress);
+            String userLabel = UUID.randomUUID().toString();
+            loadRequest.setLabel(userLabel);
+
+            PGroupCommitLoadRequest request = new PGroupCommitLoadRequest();
+            request.setDb(database);
+            request.setTable(table);
+            request.setUserLabel(userLabel);
+            request.setTimeout(timeout);
+            request.setClientTimeMs(System.currentTimeMillis());
+            HttpEntity entity = groupCommitTable.getHttpEntity(loadRequest.getChunk());
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            entity.writeTo(outputStream);
+            byte[] data = outputStream.toByteArray();
+            RpcContext.getContext().setRequestBinaryAttachment(data);
+            LoadRpcCallback callback = new LoadRpcCallback(loadRequest, executorService);
+            service.groupCommitLoad(request, callback);
+            LOG.info("Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
+                    database, table, request.getUserLabel(), loadRequest.getChunk().getChunkId());
+        } catch (Exception e) {
+            LOG.error("Failed to send load brpc, db: {}, table: {}, chunkId: {}",
+                    database, table, loadRequest.getChunk().getChunkId(), e);
+            groupCommitTable.loadFinish(loadRequest, e);
+        }
+    }
+
+    private void sendHttp(LoadRequest request) {
         GroupCommitTable groupCommitTable = request.getTable();
         String database = groupCommitTable.getDatabase();
         String table = groupCommitTable.getTable();
         try {
-            String host = getAvailableBeHost(database, table);
+            String host = getAvailableBeHttpHost(database, table);
             String sendUrl = getSendUrl(host, database, table);
 
             HttpPut httpPut = new HttpPut(sendUrl);
@@ -192,6 +258,58 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
                             request.getResponse().getBody().getLabel(), status)));
         } else {
             request.getTable().loadFinish(request, null);
+        }
+    }
+
+    private class LoadRpcCallback implements RpcCallback<PGroupCommitLoadResponse> {
+
+        private final LoadRequest request;
+        private final ScheduledExecutorService executorService;
+
+        public LoadRpcCallback(LoadRequest request, ScheduledExecutorService executorService) {
+            this.request = request;
+            this.executorService = executorService;
+        }
+
+        @Override
+        public void success(PGroupCommitLoadResponse response) {
+            String db = request.getTable().getDatabase();
+            String table = request.getTable().getTable();
+
+            LOG.info("Receive group commit load response, db: {}, table: {}, user label: {}, chunkId: {}, " +
+                    "response: {}", db, table, request.getLabel(), request.getChunk().getChunkId(), response);
+
+            StreamLoadResponse.StreamLoadResponseBody streamLoadBody = new StreamLoadResponse.StreamLoadResponseBody();
+            streamLoadBody.setTxnId(response.getTxnId());
+            streamLoadBody.setLabel(response.getLabel());
+            streamLoadBody.setStatus(response.getStatus());
+            streamLoadBody.setMessage(response.getMessage());
+            streamLoadBody.setLeftTimeMs(response.getLeftTimeMs());
+
+            StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
+            streamLoadResponse.setBody(streamLoadBody);
+            String status = streamLoadBody.getStatus();
+            if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
+                request.setResponse(streamLoadResponse);
+                waitLabelAsync(request);
+            } else {
+                String errorMsg = String.format("Stream load failed because of error, db: %s, table: %s, user label: %s, " +
+                        "response: %s", db, table, request.getLabel(), response);
+                Throwable throwable = new StreamLoadFailException(errorMsg, streamLoadBody);
+                request.getTable().loadFinish(request, throwable);
+            }
+        }
+
+        @Override
+        public void fail(Throwable throwable) {
+            String db = request.getTable().getDatabase();
+            String table = request.getTable().getTable();
+            LOG.error("Send group commit load failure, db: {}, table: {}, user label: {}, chunkId: {}",
+                    db, table, request.getLabel(), request.getChunk().getChunkId(), throwable);
+            String errorMsg = String.format("Send group commit load failure, db: %s, table: %s, user label: %s",
+                    db, table, request.getLabel());
+            Throwable exception = new StreamLoadFailException(errorMsg, throwable);
+            request.getTable().loadFinish(request, exception);
         }
     }
 }
