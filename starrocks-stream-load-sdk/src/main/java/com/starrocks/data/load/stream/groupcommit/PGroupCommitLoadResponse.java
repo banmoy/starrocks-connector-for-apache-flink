@@ -16,4 +16,13 @@ public class PGroupCommitLoadResponse {
     private long leftTimeMs;
     private String status;
     private String message;
+    private long networkCostMs;
+    private long loadCostMs;
+    private long copyDataMs;
+    private long groupCommitMs;
+    private long pendingMs;
+    private long waitPlanMs;
+    private long appendMs;
+    private long requestPlanNum;
+    private long finishTs;
 }

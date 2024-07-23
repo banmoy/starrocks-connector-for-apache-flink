@@ -38,11 +38,24 @@ public class LoadRequest {
     private StreamLoadResponse response;
     private CompletableFuture<?> future;
 
+    public final long createTimeMs;
+    // GroupCommitStreamLoader#sendBrpc
+    public long executeTimeMs;
+    public long compressTimeMs;
+    public long callRpcTimeMs;
+    public long receiveResponseTimeMs;
+    public long labelFinalTimeMs;
+
+    public long rawSize;
+    public long compressSize;
+    PGroupCommitLoadResponse loadResponse;
+
     public LoadRequest(GroupCommitTable table, Chunk chunk) {
         this.table = table;
         this.chunk = chunk;
         this.numRetries = new AtomicInteger(0);
         this.throwables = new ArrayList<>();
+        this.createTimeMs = System.currentTimeMillis();
     }
 
     public void incRetries() {

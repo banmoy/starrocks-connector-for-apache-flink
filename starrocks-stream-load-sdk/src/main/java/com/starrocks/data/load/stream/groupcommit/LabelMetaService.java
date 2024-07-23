@@ -118,35 +118,53 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
         LOG.info("Reset label meta service");
     }
 
-    public CompletableFuture<TransactionStatus> getLabelFinalStatusAsync(
-            TableId tableId, String label, long expectFinishTimeMs) {
-        LabelMeta labelMeta = labelHolderMap.computeIfAbsent(tableId, key -> new TableLabelHolder(tableId))
-                .addLabel(label, expectFinishTimeMs);
-        if (labelMeta.isScheduled.compareAndSet(false, true)) {
-            long delayMs = expectFinishTimeMs > 0 ?
-                    Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) : checkLabelIntervalMs;
-            scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), delayMs, TimeUnit.MILLISECONDS);
-            LOG.info("Schedule to get label state, db: {}, table: {}, label: {}, delay: {}ms",
-                    tableId.db, tableId.table, label, delayMs);
-        }
-        return labelMeta.future;
+    public CompletableFuture<LabelMeta>
+    getLabelFinalStatusAsync(TableId tableId, String label,
+                             long expectFinishTimeMs) {
+      LabelMeta labelMeta =
+          labelHolderMap
+              .computeIfAbsent(tableId, key -> new TableLabelHolder(tableId))
+              .addLabel(label, expectFinishTimeMs, checkLabelIntervalMs);
+      if (labelMeta.isScheduled.compareAndSet(false, true)) {
+        labelMeta.firstDelay =
+            expectFinishTimeMs > 0
+                ? Math.max(0, expectFinishTimeMs - System.currentTimeMillis())
+                : checkLabelIntervalMs;
+        scheduledExecutorService.schedule(()
+                                              -> checkLabelState(labelMeta),
+                                          labelMeta.firstDelay,
+                                          TimeUnit.MILLISECONDS);
+        LOG.info(
+            "Schedule to get label state, db: {}, table: {}, label: {}, delay: {}ms",
+            tableId.db, tableId.table, label, labelMeta.firstDelay);
+      }
+      return labelMeta.future;
     }
 
     private void checkLabelState(LabelMeta labelMeta) {
-        try {
-            int hostIndex = ThreadLocalRandom.current().nextInt(hosts.length);
-            TransactionStatus status = LabelUtils.getLabelStatus(
-                    httpClient, hosts[hostIndex], user, password, labelMeta.tableId.db, labelMeta.label, objectMapper);
-            if (TransactionStatus.isFinalStatus(status)) {
-                labelMeta.future.complete(status);
-                labelMeta.finishTimeMs = System.currentTimeMillis();
-                long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
-                LOG.info("Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
-                        labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, costMs, labelMeta.numRetries, status);
-                return;
-            }
-            LOG.info("Label is not in final status, db: {}, table: {}, label: {}, status: {}",
-                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status);
+      labelMeta.numRetries += 1;
+      try {
+        int hostIndex = ThreadLocalRandom.current().nextInt(hosts.length);
+        long startTs = System.currentTimeMillis();
+        TransactionStatus status = LabelUtils.getLabelStatus(
+            httpClient, hosts[hostIndex], user, password, labelMeta.tableId.db,
+            labelMeta.label, objectMapper);
+        labelMeta.getLabelCostMs += (System.currentTimeMillis() - startTs);
+        if (TransactionStatus.isFinalStatus(status)) {
+          labelMeta.transactionStatus = status;
+          labelMeta.finishTimeMs = System.currentTimeMillis();
+          labelMeta.future.complete(labelMeta);
+          long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
+          LOG.info(
+              "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
+              labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+              costMs, labelMeta.numRetries, status);
+          return;
+        }
+        LOG.info(
+            "Label is not in final status, db: {}, table: {}, label: {}, status: {}",
+            labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+            status);
         } catch (Exception e) {
             LOG.error("Failed to get label state, db: {}, table: {}, label: {}",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, e);
@@ -166,7 +184,6 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
             return;
         }
 
-        labelMeta.numRetries += 1;
         scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), checkLabelIntervalMs, TimeUnit.MILLISECONDS);
         LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
                 labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
@@ -188,8 +205,13 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
             this.pendingLabels = new ConcurrentHashMap<>();
         }
 
-        public LabelMeta addLabel(String label, long expectFinishTimeMs) {
-            return pendingLabels.computeIfAbsent(label, key -> new LabelMeta(tableId, label, expectFinishTimeMs));
+        public LabelMeta addLabel(String label, long expectFinishTimeMs,
+                                  long checkLabelIntervalMs) {
+          return pendingLabels.computeIfAbsent(
+              label,
+              key
+              -> new LabelMeta(tableId, label, expectFinishTimeMs,
+                               checkLabelIntervalMs));
         }
 
         public LabelMeta getLabel(String label) {
@@ -214,25 +236,41 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
         }
     }
 
-    private static class LabelMeta {
-        TableId tableId;
-        String label;
-        long expectFinishTimeMs;
-        CompletableFuture<TransactionStatus> future;
-        AtomicBoolean isScheduled;
-        long createTimeMs;
-        int numRetries;
-        long finishTimeMs;
+    public static class LabelMeta {
+      TableId tableId;
+      String label;
+      long expectFinishTimeMs;
+      long checkLabelIntervalMs;
+      CompletableFuture<LabelMeta> future;
+      AtomicBoolean isScheduled;
+      long createTimeMs;
+      long firstDelay = 0;
+      int numRetries = 0;
+      long finishTimeMs;
+      long getLabelCostMs = 0;
 
-        LabelMeta(TableId tableId, String label, long expectFinishTimeMs) {
-            this.tableId = tableId;
-            this.label = label;
-            this.expectFinishTimeMs = expectFinishTimeMs;
-            this.future = new CompletableFuture<>();
-            this.isScheduled = new AtomicBoolean(false);
-            this.createTimeMs = System.currentTimeMillis();
-            this.numRetries = 0;
-        }
+      TransactionStatus transactionStatus;
+
+      LabelMeta(TableId tableId, String label, long expectFinishTimeMs,
+                long checkLabelIntervalMs) {
+        this.tableId = tableId;
+        this.label = label;
+        this.expectFinishTimeMs = expectFinishTimeMs;
+        this.checkLabelIntervalMs = checkLabelIntervalMs;
+        this.future = new CompletableFuture<>();
+        this.isScheduled = new AtomicBoolean(false);
+        this.createTimeMs = System.currentTimeMillis();
+      }
+
+      public String debugString() {
+        long total = finishTimeMs - createTimeMs;
+        long wait = firstDelay + (numRetries - 1) * checkLabelIntervalMs;
+        return "LabelMeta{"
+            + ", label=" + label + ", status=" + transactionStatus +
+            ", cost=" + total + ", getLabelCost=" + getLabelCostMs +
+            ", wait=" + wait + ", pending=" + (total - wait - getLabelCostMs) +
+            ", retry=" + (numRetries - 1) + '}';
+      }
     }
 
     public static class LabelMetaConfig {

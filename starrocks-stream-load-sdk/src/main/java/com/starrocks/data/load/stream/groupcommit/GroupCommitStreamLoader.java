@@ -35,6 +35,14 @@ import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
+import java.io.ByteArrayOutputStream;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -42,16 +50,6 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.ByteArrayOutputStream;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 
 public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
@@ -131,30 +129,41 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
     }
 
     private void sendBrpc(LoadRequest loadRequest) {
-        GroupCommitTable groupCommitTable = loadRequest.getTable();
-        String database = groupCommitTable.getDatabase();
-        String table = groupCommitTable.getTable();
-        try {
-            WorkerAddress brpcAddress = getAvailableBeBrpcHost(database, table);
-            PBackendServiceAsync service = BrpcClientManager.getInstance().getBackendService(brpcAddress);
-            String userLabel = UUID.randomUUID().toString();
-            loadRequest.setLabel(userLabel);
+      loadRequest.executeTimeMs = System.currentTimeMillis();
+      GroupCommitTable groupCommitTable = loadRequest.getTable();
+      String database = groupCommitTable.getDatabase();
+      String table = groupCommitTable.getTable();
+      try {
+        HttpEntity entity =
+            groupCommitTable.getHttpEntity(loadRequest.getChunk());
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        entity.writeTo(outputStream);
+        byte[] data = outputStream.toByteArray();
+        loadRequest.rawSize = loadRequest.getChunk().estimateChunkSize();
+        loadRequest.compressSize = data.length;
+        loadRequest.compressTimeMs = System.currentTimeMillis();
 
-            PGroupCommitLoadRequest request = new PGroupCommitLoadRequest();
-            request.setDb(database);
-            request.setTable(table);
-            request.setUserLabel(userLabel);
-            request.setTimeout(timeout);
-            request.setClientTimeMs(System.currentTimeMillis());
-            HttpEntity entity = groupCommitTable.getHttpEntity(loadRequest.getChunk());
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            entity.writeTo(outputStream);
-            byte[] data = outputStream.toByteArray();
-            RpcContext.getContext().setRequestBinaryAttachment(data);
-            LoadRpcCallback callback = new LoadRpcCallback(loadRequest, executorService);
-            service.groupCommitLoad(request, callback);
-            LOG.info("Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
-                    database, table, request.getUserLabel(), loadRequest.getChunk().getChunkId());
+        WorkerAddress brpcAddress = getAvailableBeBrpcHost(database, table);
+        PBackendServiceAsync service =
+            BrpcClientManager.getInstance().getBackendService(brpcAddress);
+        String userLabel = UUID.randomUUID().toString();
+        loadRequest.setLabel(userLabel);
+
+        PGroupCommitLoadRequest request = new PGroupCommitLoadRequest();
+        request.setDb(database);
+        request.setTable(table);
+        request.setUserLabel(userLabel);
+        request.setTimeout(timeout);
+        request.setClientTimeMs(System.currentTimeMillis());
+        RpcContext.getContext().setRequestBinaryAttachment(data);
+        LoadRpcCallback callback = new LoadRpcCallback(loadRequest);
+        service.groupCommitLoad(request, callback);
+        loadRequest.callRpcTimeMs = System.currentTimeMillis();
+
+        LOG.info(
+            "Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
+            database, table, request.getUserLabel(),
+            loadRequest.getChunk().getChunkId());
         } catch (Exception e) {
             LOG.error("Failed to send load brpc, db: {}, table: {}, chunkId: {}",
                     database, table, loadRequest.getChunk().getChunkId(), e);
@@ -236,68 +245,82 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
         GroupCommitTable table = request.getTable();
         long leftTimeMs = request.getResponse().getBody().getLeftTimeMs();
         long expectFinishTimeMs = leftTimeMs > 0 ? System.currentTimeMillis() + leftTimeMs : -1;
-        CompletableFuture<TransactionStatus> future = LabelMetaService.getInstance()
+        CompletableFuture<LabelMetaService.LabelMeta> future =
+            LabelMetaService.getInstance()
                 .getLabelFinalStatusAsync(
                     TableId.of(table.getDatabase(), table.getTable()),
-                    request.getResponse().getBody().getLabel(), expectFinishTimeMs)
+                    request.getResponse().getBody().getLabel(),
+                    expectFinishTimeMs)
                 .whenCompleteAsync(
-                        (status, throwable) -> dealLabelStatus(request, status, throwable),
-                        executorService);
+                    (labelMeta, throwable)
+                        -> dealLabelStatus(request, labelMeta, throwable),
+                    executorService);
         request.setFuture(future);
     }
 
-    private void dealLabelStatus(LoadRequest request, TransactionStatus status, Throwable throwable) {
-        if (throwable != null) {
-            request.getTable().loadFinish(request, throwable);
-            return;
-        }
+    private void dealLabelStatus(LoadRequest request,
+                                 LabelMetaService.LabelMeta labelMeta,
+                                 Throwable throwable) {
+      TransactionStatus status = labelMeta.transactionStatus;
+      request.labelFinalTimeMs = System.currentTimeMillis();
+      if (throwable != null) {
+        request.getTable().loadFinish(request, throwable);
+        return;
+      }
 
-        if (status != TransactionStatus.VISIBLE && status != TransactionStatus.COMMITTED) {
-            request.getTable().loadFinish(request, new RuntimeException(
-                    String.format("Label %s does not in final status, current status: %s",
-                            request.getResponse().getBody().getLabel(), status)));
-        } else {
-            request.getTable().loadFinish(request, null);
-        }
+      if (status != TransactionStatus.VISIBLE &&
+          status != TransactionStatus.COMMITTED) {
+        request.getTable().loadFinish(
+            request,
+            new RuntimeException(String.format(
+                "Label %s does not in final status, current status: %s",
+                request.getResponse().getBody().getLabel(), status)));
+      } else {
+        request.getTable().loadFinish(request, null);
+        logRequestTrace(request, labelMeta);
+      }
     }
 
     private class LoadRpcCallback implements RpcCallback<PGroupCommitLoadResponse> {
 
-        private final LoadRequest request;
-        private final ScheduledExecutorService executorService;
+      private final LoadRequest request;
 
-        public LoadRpcCallback(LoadRequest request, ScheduledExecutorService executorService) {
-            this.request = request;
-            this.executorService = executorService;
+      public LoadRpcCallback(LoadRequest request) { this.request = request; }
+
+      @Override
+      public void success(PGroupCommitLoadResponse response) {
+        request.receiveResponseTimeMs = System.currentTimeMillis();
+        String db = request.getTable().getDatabase();
+        String table = request.getTable().getTable();
+
+        LOG.info(
+            "Receive group commit load response, db: {}, table: {}, user label: {}, chunkId: {}, ",
+            db, table, request.getLabel(), request.getChunk().getChunkId());
+
+        request.loadResponse = response;
+        StreamLoadResponse.StreamLoadResponseBody streamLoadBody =
+            new StreamLoadResponse.StreamLoadResponseBody();
+        streamLoadBody.setTxnId(response.getTxnId());
+        streamLoadBody.setLabel(response.getLabel());
+        streamLoadBody.setStatus(response.getStatus());
+        streamLoadBody.setMessage(response.getMessage());
+        streamLoadBody.setLeftTimeMs(response.getLeftTimeMs());
+
+        StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
+        streamLoadResponse.setBody(streamLoadBody);
+        String status = streamLoadBody.getStatus();
+        if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
+          request.setResponse(streamLoadResponse);
+          waitLabelAsync(request);
+        } else {
+          String errorMsg = String.format(
+              "Stream load failed because of error, db: %s, table: %s, user label: %s, "
+                  + "response: %s",
+              db, table, request.getLabel(), response);
+          Throwable throwable =
+              new StreamLoadFailException(errorMsg, streamLoadBody);
+          request.getTable().loadFinish(request, throwable);
         }
-
-        @Override
-        public void success(PGroupCommitLoadResponse response) {
-            String db = request.getTable().getDatabase();
-            String table = request.getTable().getTable();
-
-            LOG.info("Receive group commit load response, db: {}, table: {}, user label: {}, chunkId: {}, " +
-                    "response: {}", db, table, request.getLabel(), request.getChunk().getChunkId(), response);
-
-            StreamLoadResponse.StreamLoadResponseBody streamLoadBody = new StreamLoadResponse.StreamLoadResponseBody();
-            streamLoadBody.setTxnId(response.getTxnId());
-            streamLoadBody.setLabel(response.getLabel());
-            streamLoadBody.setStatus(response.getStatus());
-            streamLoadBody.setMessage(response.getMessage());
-            streamLoadBody.setLeftTimeMs(response.getLeftTimeMs());
-
-            StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
-            streamLoadResponse.setBody(streamLoadBody);
-            String status = streamLoadBody.getStatus();
-            if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
-                request.setResponse(streamLoadResponse);
-                waitLabelAsync(request);
-            } else {
-                String errorMsg = String.format("Stream load failed because of error, db: %s, table: %s, user label: %s, " +
-                        "response: %s", db, table, request.getLabel(), response);
-                Throwable throwable = new StreamLoadFailException(errorMsg, streamLoadBody);
-                request.getTable().loadFinish(request, throwable);
-            }
         }
 
         @Override
@@ -311,5 +334,32 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             Throwable exception = new StreamLoadFailException(errorMsg, throwable);
             request.getTable().loadFinish(request, exception);
         }
+    }
+
+    private static void logRequestTrace(LoadRequest request,
+                                        LabelMetaService.LabelMeta labelMeta) {
+      LOG.info(
+          "Cost trace, db: {}, table: {}, chunkId: {}, userLabel: {}, raw/compress: {}/{}, "
+              +
+              "total: {}, pending: {}, compress: {}, callRpc: {}, transmit: {}, server: {}, response: {}, "
+              +
+              "waitLabel: {}, copyData: {}, group: {}, pending: {}, waitPlan: {}, append: {}, requestPlanNum: {}, "
+              + "{}",
+          request.getTable().getDatabase(), request.getTable().getTable(),
+          request.getChunk().getChunkId(), request.getLabel(), request.rawSize,
+          request.compressSize, request.labelFinalTimeMs - request.createTimeMs,
+          request.executeTimeMs - request.createTimeMs,
+          request.compressTimeMs - request.executeTimeMs,
+          request.callRpcTimeMs - request.compressTimeMs,
+          request.loadResponse.getNetworkCostMs(),
+          request.loadResponse.getLoadCostMs(),
+          request.receiveResponseTimeMs - request.loadResponse.getFinishTs(),
+          request.labelFinalTimeMs - request.receiveResponseTimeMs,
+          request.loadResponse.getCopyDataMs(),
+          request.loadResponse.getGroupCommitMs(),
+          request.loadResponse.getPendingMs(),
+          request.loadResponse.getWaitPlanMs(),
+          request.loadResponse.getAppendMs(),
+          request.loadResponse.getRequestPlanNum(), labelMeta.debugString());
     }
 }
