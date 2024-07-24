@@ -128,7 +128,7 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
       if (labelMeta.isScheduled.compareAndSet(false, true)) {
         labelMeta.firstDelay =
             expectFinishTimeMs > 0
-                ? Math.max(0, expectFinishTimeMs - System.currentTimeMillis())
+                ? Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) + 50
                 : checkLabelIntervalMs;
         scheduledExecutorService.schedule(()
                                               -> checkLabelState(labelMeta),

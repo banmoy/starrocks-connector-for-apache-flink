@@ -62,9 +62,9 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
     public void start(StreamLoadProperties properties, StreamLoadManager manager) {
         RpcClientOptions clientOptions = new RpcClientOptions();
         clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
-        clientOptions.setConnectTimeoutMillis(1000);
-        clientOptions.setReadTimeoutMillis(1000);
-        clientOptions.setWriteTimeoutMillis(1000);
+        clientOptions.setConnectTimeoutMillis(60000);
+        clientOptions.setReadTimeoutMillis(60000);
+        clientOptions.setWriteTimeoutMillis(60000);
         clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
         clientOptions.setMaxTotalConnections(10);
         clientOptions.setMinIdleConnections(2);

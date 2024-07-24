@@ -33,6 +33,6 @@ public enum TransactionStatus {
     }
 
     public static boolean isFinalStatus(TransactionStatus status) {
-        return status == COMMITTED || status == VISIBLE || status == ABORTED || status == UNKNOWN;
+        return status == VISIBLE || status == ABORTED || status == UNKNOWN;
     }
 }
