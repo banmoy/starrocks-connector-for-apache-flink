@@ -25,4 +25,26 @@ public class PGroupCommitLoadResponse {
     private long appendMs;
     private long requestPlanNum;
     private long finishTs;
+
+    @Override
+    public String toString() {
+        return "PGroupCommitLoadResponse{" +
+                "txnId=" + txnId +
+                ", label='" + label + '\'' +
+                ", host='" + host + '\'' +
+                ", fragmentId='" + fragmentId + '\'' +
+                ", leftTimeMs=" + leftTimeMs +
+                ", status='" + status + '\'' +
+                ", message='" + message + '\'' +
+                ", networkCostMs=" + networkCostMs +
+                ", loadCostMs=" + loadCostMs +
+                ", copyDataMs=" + copyDataMs +
+                ", groupCommitMs=" + groupCommitMs +
+                ", pendingMs=" + pendingMs +
+                ", waitPlanMs=" + waitPlanMs +
+                ", appendMs=" + appendMs +
+                ", requestPlanNum=" + requestPlanNum +
+                ", finishTs=" + finishTs +
+                '}';
+    }
 }

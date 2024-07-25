@@ -15,4 +15,16 @@ public class PGroupCommitLoadRequest {
     private long timeout;
     private long clientTimeMs;
     private byte[] data;
+
+    @Override
+    public String toString() {
+        return "PGroupCommitLoadRequest{" +
+                "db='" + db + '\'' +
+                ", table='" + table + '\'' +
+                ", userLabel='" + userLabel + '\'' +
+                ", timeout=" + timeout +
+                ", clientTimeMs=" + clientTimeMs +
+                ", dataSize=" + (data == null ? 0 : data.length) +
+                '}';
+    }
 }
