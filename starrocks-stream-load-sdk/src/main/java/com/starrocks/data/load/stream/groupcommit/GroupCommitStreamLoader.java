@@ -164,7 +164,7 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             "Send group commit load request, db: {}, table: {}, user label: {}, chunkId: {}",
             database, table, request.getUserLabel(),
             loadRequest.getChunk().getChunkId());
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOG.error("Failed to send load brpc, db: {}, table: {}, chunkId: {}",
                     database, table, loadRequest.getChunk().getChunkId(), e);
             groupCommitTable.loadFinish(loadRequest, e);
