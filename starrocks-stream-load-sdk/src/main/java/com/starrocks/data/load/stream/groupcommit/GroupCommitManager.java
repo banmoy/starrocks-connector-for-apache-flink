@@ -202,7 +202,15 @@ public class GroupCommitManager implements StreamLoadManager, Serializable {
     public void flush() {
         for (GroupCommitTable table : tables.values()) {
             try {
-                table.flush();
+                table.flush(false);
+            } catch (Exception e) {
+                exception.compareAndSet(null, e);
+                throw new RuntimeException(e);
+            }
+        }
+        for (GroupCommitTable table : tables.values()) {
+            try {
+                table.flush(true);
             } catch (Exception e) {
                 exception.compareAndSet(null, e);
                 throw new RuntimeException(e);

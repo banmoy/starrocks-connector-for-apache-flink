@@ -141,10 +141,13 @@ public class GroupCommitTable {
         }
     }
 
-    public void flush() throws Exception {
+    public void flush(boolean wait) throws Exception {
         lock.lock();
         try {
             switchChunk(FlushChunkReason.FLUSH);
+            if (!wait) {
+                return;
+            }
             long leftTimeoutNs = flushTimeoutMs * 1000000L;
             while (!inflightLoadRequests.isEmpty() && tableThrowable.get() == null) {
                 try {
