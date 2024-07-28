@@ -272,4 +272,8 @@ public class GroupCommitTable {
                 .map(codec -> (HttpEntity) new CompressionHttpEntity(entity, codec))
                 .orElse(entity);
     }
+
+    public Optional<CompressionCodec> getCompressionCodec() {
+        return compressionCodec;
+    }
 }

@@ -32,10 +32,17 @@ import com.starrocks.data.load.stream.StreamLoadConstants;
 import com.starrocks.data.load.stream.StreamLoadManager;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.TransactionStatus;
+import com.starrocks.data.load.stream.compress.NoCompressCodec;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
-import java.io.ByteArrayOutputStream;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,13 +50,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import org.apache.http.HttpEntity;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
@@ -134,12 +134,9 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
       String database = groupCommitTable.getDatabase();
       String table = groupCommitTable.getTable();
       try {
-        HttpEntity entity =
-            groupCommitTable.getHttpEntity(loadRequest.getChunk());
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        entity.writeTo(outputStream);
-        byte[] data = outputStream.toByteArray();
-        loadRequest.rawSize = loadRequest.getChunk().estimateChunkSize();
+        byte[] data = ChunkCompressUtil.compress(loadRequest.getChunk(),
+                groupCommitTable.getCompressionCodec().orElseGet(NoCompressCodec::new));
+        loadRequest.rawSize = loadRequest.getChunk().chunkBytes();
         loadRequest.compressSize = data.length;
         loadRequest.compressTimeMs = System.currentTimeMillis();
 
