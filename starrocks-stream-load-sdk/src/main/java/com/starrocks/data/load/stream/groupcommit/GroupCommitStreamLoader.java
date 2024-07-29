@@ -60,33 +60,54 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
 
     @Override
     public void start(StreamLoadProperties properties, StreamLoadManager manager) {
-        RpcClientOptions clientOptions = new RpcClientOptions();
-        clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
-        clientOptions.setConnectTimeoutMillis(60000);
-        clientOptions.setReadTimeoutMillis(60000);
-        clientOptions.setWriteTimeoutMillis(60000);
-        clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
-        clientOptions.setMaxTotalConnections(10);
-        clientOptions.setMinIdleConnections(2);
-        clientOptions.setMaxTryTimes(3);
-        clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
-        clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
-        clientOptions.setIoThreadNum(Runtime.getRuntime().availableProcessors());
-        clientOptions.setWorkThreadNum(Runtime.getRuntime().availableProcessors());
-        BrpcClientManager.BrpcConfig brpcConfig = new BrpcClientManager.BrpcConfig(clientOptions);
-        BrpcClientManager.getInstance().takeRef(brpcConfig);
+        boolean brpc = false;
+        boolean feMeta = false;
+        boolean labelMeta = false;
 
-        FeMetaService.FeMetaConfig config = new FeMetaService.FeMetaConfig();
-        config.properties = properties;
-        config.numExecutors = 2;
-        config.updateIntervalMs = 60000;
-        FeMetaService.getInstance().takeRef(config);
+        try {
+            RpcClientOptions clientOptions = new RpcClientOptions();
+            clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
+            clientOptions.setConnectTimeoutMillis(60000);
+            clientOptions.setReadTimeoutMillis(60000);
+            clientOptions.setWriteTimeoutMillis(60000);
+            clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
+            clientOptions.setMaxTotalConnections(10);
+            clientOptions.setMinIdleConnections(2);
+            clientOptions.setMaxTryTimes(3);
+            clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
+            clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
+            clientOptions.setIoThreadNum(Runtime.getRuntime().availableProcessors());
+            clientOptions.setWorkThreadNum(Runtime.getRuntime().availableProcessors());
+            BrpcClientManager.BrpcConfig brpcConfig = new BrpcClientManager.BrpcConfig(clientOptions);
+            BrpcClientManager.getInstance().takeRef(brpcConfig);
+            brpc = true;
 
-        LabelMetaService.LabelMetaConfig labelMetaConfig = new LabelMetaService.LabelMetaConfig();
-        labelMetaConfig.properties = properties;
-        LabelMetaService.getInstance().takeRef(labelMetaConfig);
+            FeMetaService.FeMetaConfig config = new FeMetaService.FeMetaConfig();
+            config.properties = properties;
+            config.numExecutors = 2;
+            config.updateIntervalMs = 60000;
+            FeMetaService.getInstance().takeRef(config);
+            feMeta = true;
 
-        super.start(properties, manager);
+            LabelMetaService.LabelMetaConfig labelMetaConfig = new LabelMetaService.LabelMetaConfig();
+            labelMetaConfig.properties = properties;
+            LabelMetaService.getInstance().takeRef(labelMetaConfig);
+            labelMeta = true;
+
+            super.start(properties, manager);
+        } catch (Throwable e) {
+            if (brpc) {
+                BrpcClientManager.getInstance().releaseRef();
+            }
+            if (feMeta) {
+                FeMetaService.getInstance().releaseRef();
+            }
+            if (labelMeta) {
+                LabelMetaService.getInstance().releaseRef();
+            }
+
+            throw new RuntimeException("Failed to start group commit loader", e);
+        }
     }
 
     @Override

@@ -24,13 +24,15 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starrocks.data.load.stream.TransactionStatus;
+import com.starrocks.data.load.stream.groupcommit.thrift.ThriftClient;
+import com.starrocks.data.load.stream.groupcommit.thrift.ThriftClientPool;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -59,6 +61,8 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
     private final ObjectMapper objectMapper;
     private CloseableHttpClient httpClient;
 
+    private ThriftClientPool thriftClientPool;
+
     public LabelMetaService() {
         this.objectMapper = new ObjectMapper();
         // StreamLoadResponseBody does not contain all fields returned by StarRocks
@@ -73,14 +77,17 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
     }
 
     @Override
-    protected void init(LabelMetaConfig labelMetaConfig) {
+    protected void init(LabelMetaConfig labelMetaConfig) throws Exception {
         StreamLoadProperties properties = labelMetaConfig.properties;
         this.hosts = properties.getLoadUrls();
         this.user = properties.getUsername();
         this.password = properties.getPassword();
         this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
         this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
-        int threadPoolSize = properties.getIoThreadCount();
+        int threadPoolSize = 10;
+        URL url = new URL(hosts[0]);
+        this.thriftClientPool =
+            new ThriftClientPool(url.getHost(), 9020, threadPoolSize);
         this.scheduledExecutorService = new ScheduledThreadPoolExecutor(
                 threadPoolSize,
                 r -> {
@@ -89,12 +96,13 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
                     return thread;
                 });
 
-        PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
-        cm.setDefaultMaxPerRoute(threadPoolSize);
-        cm.setMaxTotal(threadPoolSize);
-        httpClient = HttpClients.custom()
-                .setConnectionManager(cm)
-                .build();
+//        PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+//        cm.setDefaultMaxPerRoute(threadPoolSize);
+//        cm.setMaxTotal(threadPoolSize);
+//        httpClient = HttpClients.custom()
+//                .setConnectionManager(cm)
+//                .build();
+
         this.scheduledExecutorService.schedule(this::cleanUselessLabels, 30, TimeUnit.SECONDS);
         LOG.info("Init label meta service, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}, threadPoolSize: {}",
                 checkLabelIntervalMs, checkLabelTimeoutMs, threadPoolSize);
@@ -114,6 +122,9 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
             }
             this.httpClient = null;
         }
+        if (thriftClientPool != null) {
+            thriftClientPool.close();
+        }
         labelHolderMap.clear();
         LOG.info("Reset label meta service");
     }
@@ -131,7 +142,7 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
                 ? Math.max(0, expectFinishTimeMs - System.currentTimeMillis()) + 50
                 : checkLabelIntervalMs;
         scheduledExecutorService.schedule(()
-                                              -> checkLabelState(labelMeta),
+                                              -> checkLabelStateByThrift(labelMeta),
                                           labelMeta.firstDelay,
                                           TimeUnit.MILLISECONDS);
         LOG.info(
@@ -141,7 +152,64 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
       return labelMeta.future;
     }
 
-    private void checkLabelState(LabelMeta labelMeta) {
+    private void checkLabelStateByThrift(LabelMeta labelMeta) {
+        labelMeta.numRetries += 1;
+        ThriftClient client = null;
+        try {
+            long startTs = System.currentTimeMillis();
+            client = thriftClientPool.borrowClient();
+            long getClientTs = System.currentTimeMillis();
+            labelMeta.getClientCostMs += (getClientTs - startTs);
+            TransactionStatus status = LabelUtils.getLabelStatus(client, labelMeta.tableId.db, labelMeta.label);
+            labelMeta.getLabelCostMs += (System.currentTimeMillis() - getClientTs);
+            if (TransactionStatus.isFinalStatus(status)) {
+                labelMeta.transactionStatus = status;
+                labelMeta.finishTimeMs = System.currentTimeMillis();
+                labelMeta.future.complete(labelMeta);
+                long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
+                LOG.info(
+                        "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}, client: {}",
+                        labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+                        costMs, labelMeta.numRetries, status, client.getId());
+                return;
+            }
+            LOG.info(
+                    "Label is not in final status, db: {}, table: {}, label: {}, status: {}, client: {}",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, client.getId());
+        } catch (Exception e) {
+            LOG.error("Failed to get label state, db: {}, table: {}, label: {}, client: {}",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+                    client == null ? null : client.getId(), e);
+            if (client != null && e instanceof TTransportException) {
+                thriftClientPool.removeClient(client);
+                client = null;
+            }
+        } finally {
+            if (client != null) {
+                thriftClientPool.returnClient(client);
+            }
+        }
+        TableLabelHolder holder = labelHolderMap.get(labelMeta.tableId);
+        if (holder == null || holder.getLabel(labelMeta.label) != labelMeta) {
+            labelMeta.future.completeExceptionally(new RuntimeException("Label is discarded"));
+            LOG.error("Failed to retry to get label state because label is discarded, db: {}, table: {}, label: {}",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label);
+            return;
+        }
+
+        if (System.currentTimeMillis() - labelMeta.createTimeMs >= checkLabelTimeoutMs) {
+            labelMeta.future.completeExceptionally(new RuntimeException("Get label state timeout"));
+            LOG.error("Failed to retry to get label state because of timeout, db: {}, table: {}, label: {}, timeout: {}ms",
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, checkLabelTimeoutMs);
+            return;
+        }
+
+        scheduledExecutorService.schedule(() -> checkLabelStateByThrift(labelMeta), checkLabelIntervalMs, TimeUnit.MILLISECONDS);
+        LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
+    }
+
+    private void checkLabelStateByHttp(LabelMeta labelMeta) {
       labelMeta.numRetries += 1;
       try {
         int hostIndex = ThreadLocalRandom.current().nextInt(hosts.length);
@@ -184,7 +252,7 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
             return;
         }
 
-        scheduledExecutorService.schedule(() -> checkLabelState(labelMeta), checkLabelIntervalMs, TimeUnit.MILLISECONDS);
+        scheduledExecutorService.schedule(() -> checkLabelStateByHttp(labelMeta), checkLabelIntervalMs, TimeUnit.MILLISECONDS);
         LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
                 labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
     }
@@ -247,6 +315,7 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
       long firstDelay = 0;
       int numRetries = 0;
       long finishTimeMs;
+      long getClientCostMs = 0;
       long getLabelCostMs = 0;
 
       TransactionStatus transactionStatus;
@@ -265,10 +334,11 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
       public String debugString() {
         long total = finishTimeMs - createTimeMs;
         long wait = firstDelay + (numRetries - 1) * checkLabelIntervalMs;
-        return "LabelMeta{"
-            + ", label=" + label + ", status=" + transactionStatus +
-            ", cost=" + total + ", getLabelCost=" + getLabelCostMs +
-            ", wait=" + wait + ", pending=" + (total - wait - getLabelCostMs) +
+        return "LabelMeta{" +
+            ", label=" + label + ", status=" + transactionStatus +
+            ", cost=" + total + ", getClientCost=" + getClientCostMs +
+            ", getLabelCost=" + getLabelCostMs + ", wait=" + wait +
+            ", pending=" + (total - wait - getLabelCostMs) +
             ", retry=" + (numRetries - 1) + '}';
       }
     }

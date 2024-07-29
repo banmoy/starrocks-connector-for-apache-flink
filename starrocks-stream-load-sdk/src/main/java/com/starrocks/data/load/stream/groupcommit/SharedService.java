@@ -33,11 +33,11 @@ public abstract class SharedService<CONFIG> {
         this.refCount = new AtomicInteger();
     }
 
-    protected abstract void init(CONFIG config);
+    protected abstract void init(CONFIG config) throws Exception;
 
     protected abstract void reset();
 
-    public void takeRef(CONFIG config) {
+    public void takeRef(CONFIG config) throws Exception {
         lock.lock();
         try {
             if (refCount.getAndIncrement() == 0) {

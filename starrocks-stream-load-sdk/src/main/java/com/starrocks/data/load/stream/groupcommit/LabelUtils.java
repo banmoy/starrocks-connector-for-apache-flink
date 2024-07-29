@@ -25,6 +25,9 @@ import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.StreamLoadUtils;
 import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
+import com.starrocks.data.load.stream.groupcommit.thrift.ThriftClient;
+import com.starrocks.thrift.TGetLabelStateRequest;
+import com.starrocks.thrift.TGetLabelStateResponse;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -63,5 +66,22 @@ public class LabelUtils {
 
             return TransactionStatus.valueOf(state.toUpperCase());
         }
+    }
+
+    public static TransactionStatus getLabelStatus(ThriftClient client, String database, String label) throws Exception {
+        TGetLabelStateRequest request = new TGetLabelStateRequest();
+        request.addToDbs(database);
+        request.addToLabels(label);
+        TGetLabelStateResponse response = client.getService().getLabelState(request);
+        if (response.isSetStatus() && response.getStatus() != null && response.getStatus().size() == 1) {
+            try {
+                return TransactionStatus.valueOf(response.getStatus().get(0));
+            } catch (Exception e) {
+                LOG.error("Failed to convert status to TransactionStatus, db: {}, label: {}, status: {}",
+                        database, label, response.getStatus().get(0));
+                throw e;
+            }
+        }
+        throw new Exception(String.format("Failed to get status of label, db: %s, label: %s, response: %s", database, label, response));
     }
 }

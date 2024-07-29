@@ -24,6 +24,7 @@
         <brpc.java.version>3.0.5</brpc.java.version>
         <lombok.version>1.18.34</lombok.version>
         <log4j.version>2.17.1</log4j.version>
+        <thrift.version>0.20.0</thrift.version>
     </properties>
 
     <dependencies>
@@ -86,6 +87,12 @@
             <groupId>com.baidu</groupId>
             <artifactId>brpc-java</artifactId>
             <version>${brpc.java.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.thrift</groupId>
+            <artifactId>libthrift</artifactId>
+            <version>${thrift.version}</version>
         </dependency>
 
         <dependency>
@@ -166,6 +173,25 @@
                         <phase>compile</phase>
                         <goals>
                             <goal>precompile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.thrift.tools</groupId>
+                <artifactId>maven-thrift-plugin</artifactId>
+                <version>0.1.11</version>
+                <configuration>
+                    <thriftExecutable>thrift</thriftExecutable>
+                    <thriftSourceRoot>gensrc/thrift</thriftSourceRoot>
+                    <generator>java</generator>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>thrift-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>compile</goal>
                         </goals>
                     </execution>
                 </executions>
