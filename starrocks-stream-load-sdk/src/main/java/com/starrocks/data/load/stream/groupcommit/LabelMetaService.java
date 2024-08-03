@@ -84,12 +84,11 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
         this.password = properties.getPassword();
         this.checkLabelIntervalMs = properties.getCheckLabelIntervalMs();
         this.checkLabelTimeoutMs = properties.getCheckLabelTimeoutMs();
-        int threadPoolSize = 10;
         URL url = new URL(hosts[0]);
         this.thriftClientPool =
-            new ThriftClientPool(url.getHost(), 9020, threadPoolSize);
+            new ThriftClientPool(url.getHost(), 9020, properties.getThriftMaxConnections());
         this.scheduledExecutorService = new ScheduledThreadPoolExecutor(
-                threadPoolSize,
+                properties.getThriftMaxConnections(),
                 r -> {
                     Thread thread = new Thread(null, r, "LabelMetaService-" + UUID.randomUUID());
                     thread.setDaemon(true);
@@ -105,7 +104,7 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
 
         this.scheduledExecutorService.schedule(this::cleanUselessLabels, 30, TimeUnit.SECONDS);
         LOG.info("Init label meta service, checkLabelIntervalMs: {}, checkLabelTimeoutMs: {}, threadPoolSize: {}",
-                checkLabelIntervalMs, checkLabelTimeoutMs, threadPoolSize);
+                checkLabelIntervalMs, checkLabelTimeoutMs, properties.getThriftMaxConnections());
     }
 
     @Override

@@ -71,13 +71,14 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             clientOptions.setReadTimeoutMillis(60000);
             clientOptions.setWriteTimeoutMillis(60000);
             clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
-            clientOptions.setMaxTotalConnections(10);
-            clientOptions.setMinIdleConnections(2);
+            clientOptions.setMaxTotalConnections(properties.getBrpcMaxConnections());
+            clientOptions.setMinIdleConnections(properties.getBrpcMinConnections());
             clientOptions.setMaxTryTimes(3);
             clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
             clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
-            clientOptions.setIoThreadNum(Runtime.getRuntime().availableProcessors());
-            clientOptions.setWorkThreadNum(Runtime.getRuntime().availableProcessors());
+            int nproc = Runtime.getRuntime().availableProcessors();
+            clientOptions.setIoThreadNum(properties.getBrpcIoThreadNum() > 0 ? properties.getBrpcIoThreadNum() : nproc);
+            clientOptions.setWorkThreadNum(properties.getBrpcWorkerThreadNum() > 0 ? properties.getBrpcWorkerThreadNum() : nproc);
             BrpcClientManager.BrpcConfig brpcConfig = new BrpcClientManager.BrpcConfig(clientOptions);
             BrpcClientManager.getInstance().takeRef(brpcConfig);
             brpc = true;

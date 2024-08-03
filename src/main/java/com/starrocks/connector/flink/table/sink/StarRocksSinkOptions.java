@@ -165,6 +165,26 @@ public class StarRocksSinkOptions implements Serializable {
             ConfigOptions.key("sink.group-commit.check-label.timeout-ms")
                     .intType().defaultValue(60000);
 
+    public static final ConfigOption<Integer> SINK_BRPC_MAX_CONNECTIONS =
+            ConfigOptions.key("sink.brcp.max-connections")
+                    .intType().defaultValue(5);
+
+    public static final ConfigOption<Integer> SINK_BRPC_MIN_CONNECTIONS =
+            ConfigOptions.key("sink.brcp.min-connections")
+                    .intType().defaultValue(2);
+
+    public static final ConfigOption<Integer> SINK_BRPC_IO_THREAD_NUM =
+            ConfigOptions.key("sink.brcp.io-thread.num")
+                    .intType().defaultValue(-1);
+
+    public static final ConfigOption<Integer> SINK_BRPC_WORKER_THREAD_NUM =
+            ConfigOptions.key("sink.brcp.worker-thread.num")
+                    .intType().defaultValue(-1);
+
+    public static final ConfigOption<Integer> SINK_THRIFT_MAX_CONNECTIONS =
+            ConfigOptions.key("sink.thrift.max-connections")
+                    .intType().defaultValue(3);
+
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
     // Sink semantic
@@ -393,6 +413,26 @@ public class StarRocksSinkOptions implements Serializable {
         return tableOptions.get(SINK_GROUP_COMMIT_CHECK_LABEL_TIMEOUT_MS);
     }
 
+    public int getBrpcMaxConnections() {
+        return tableOptions.get(SINK_BRPC_MAX_CONNECTIONS);
+    }
+
+    public int getBrpcMinConnections() {
+        return tableOptions.get(SINK_BRPC_MIN_CONNECTIONS);
+    }
+
+    public int getBrpcIoThreadNum() {
+        return tableOptions.get(SINK_BRPC_IO_THREAD_NUM);
+    }
+
+    public int getBrpcWorkerThreadNum() {
+        return tableOptions.get(SINK_BRPC_WORKER_THREAD_NUM);
+    }
+
+    public int getThriftMaxConnections() {
+        return tableOptions.get(SINK_THRIFT_MAX_CONNECTIONS);
+    }
+
     private void validateStreamLoadUrl() {
         tableOptions.getOptional(LOAD_URL).ifPresent(urlList -> {
             for (String host : urlList) {
@@ -591,7 +631,12 @@ public class StarRocksSinkOptions implements Serializable {
                 .retryIntervalInMs(getRetryIntervalMs())
                 .addHeaders(streamLoadProperties)
                 .setCheckLabelIntervalMs(getGroupCommitCheckLabelIntervalMs())
-                .setCheckLabelTimeoutMs(getGroupCommitCheckLabelTimeoutMs());
+                .setCheckLabelTimeoutMs(getGroupCommitCheckLabelTimeoutMs())
+                .setBrpcMaxConnections(getBrpcMaxConnections())
+                .setBrpcMinConnections(getBrpcMinConnections())
+                .setBrpcIoThreadNum(getBrpcIoThreadNum())
+                .setBrpcWorkerThreadNum(getBrpcWorkerThreadNum())
+                .setThriftMaxConnections(getThriftMaxConnections());
 
         for (StreamLoadTableProperties tableProperties : tablePropertiesList) {
             builder.addTableProperties(tableProperties);

@@ -92,6 +92,12 @@ public class StreamLoadProperties implements Serializable {
     private final int checkLabelIntervalMs;
     private final int checkLabelTimeoutMs;
 
+    private final int brpcMaxConnections;
+    private final int brpcMinConnections;
+    private final int brpcIoThreadNum;
+    private final int brpcWorkerThreadNum;
+    private final int thriftMaxConnections;
+
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
         this.loadUrls = builder.loadUrls;
@@ -127,6 +133,11 @@ public class StreamLoadProperties implements Serializable {
         this.headers = Collections.unmodifiableMap(builder.headers);
         this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
         this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
+        this.brpcMaxConnections = builder.brpcMaxConnections;
+        this.brpcMinConnections = builder.brpcMinConnections;
+        this.brpcIoThreadNum = builder.brpcIoThreadNum;
+        this.brpcWorkerThreadNum = builder.brpcWorkerThreadNum;
+        this.thriftMaxConnections = builder.thriftMaxConnections;
     }
 
     public boolean isEnableTransaction() {
@@ -248,6 +259,26 @@ public class StreamLoadProperties implements Serializable {
         return checkLabelTimeoutMs;
     }
 
+    public int getBrpcMaxConnections() {
+        return brpcMaxConnections;
+    }
+
+    public int getBrpcMinConnections() {
+        return brpcMinConnections;
+    }
+
+    public int getBrpcIoThreadNum() {
+        return brpcIoThreadNum;
+    }
+
+    public int getBrpcWorkerThreadNum() {
+        return brpcWorkerThreadNum;
+    }
+
+    public int getThriftMaxConnections() {
+        return thriftMaxConnections;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -285,6 +316,11 @@ public class StreamLoadProperties implements Serializable {
         private Map<String, String> headers = new HashMap<>();
         private int checkLabelIntervalMs = 100;
         private int checkLabelTimeoutMs = 60000;
+        private int brpcMaxConnections = 5;
+        private int brpcMinConnections = 2;
+        private int brpcIoThreadNum = -1;
+        private int brpcWorkerThreadNum = -1;
+        private int thriftMaxConnections = 3;
 
         public Builder jdbcUrl(String jdbcUrl) {
             this.jdbcUrl = jdbcUrl;
@@ -455,6 +491,31 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
             this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcMaxConnections(int brpcMaxConnections) {
+            this.brpcMaxConnections = brpcMaxConnections;
+            return this;
+        }
+
+        public Builder setBrpcMinConnections(int brpcMinConnections) {
+            this.brpcMinConnections = brpcMinConnections;
+            return this;
+        }
+
+        public Builder setBrpcIoThreadNum(int brpcIoThreadNum) {
+            this.brpcIoThreadNum = brpcIoThreadNum;
+            return this;
+        }
+
+        public Builder setBrpcWorkerThreadNum(int brpcWorkerThreadNum) {
+            this.brpcWorkerThreadNum = brpcWorkerThreadNum;
+            return this;
+        }
+
+        public Builder setThriftMaxConnections(int thriftMaxConnections) {
+            this.thriftMaxConnections = thriftMaxConnections;
             return this;
         }
 
