@@ -83,6 +83,12 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             BrpcClientManager.getInstance().takeRef(brpcConfig);
             brpc = true;
 
+            LabelMetaService.LabelMetaConfig labelMetaConfig = new LabelMetaService.LabelMetaConfig();
+            labelMetaConfig.properties = properties;
+            LabelMetaService.getInstance().takeRef(labelMetaConfig);
+            labelMeta = true;
+
+            // TODO combine with LabelMetaService
             FeMetaService.FeMetaConfig config = new FeMetaService.FeMetaConfig();
             config.properties = properties;
             config.numExecutors = 2;
@@ -90,23 +96,17 @@ public class GroupCommitStreamLoader extends DefaultStreamLoader {
             FeMetaService.getInstance().takeRef(config);
             feMeta = true;
 
-            LabelMetaService.LabelMetaConfig labelMetaConfig = new LabelMetaService.LabelMetaConfig();
-            labelMetaConfig.properties = properties;
-            LabelMetaService.getInstance().takeRef(labelMetaConfig);
-            labelMeta = true;
-
             super.start(properties, manager);
         } catch (Throwable e) {
-            if (brpc) {
-                BrpcClientManager.getInstance().releaseRef();
-            }
             if (feMeta) {
                 FeMetaService.getInstance().releaseRef();
             }
             if (labelMeta) {
                 LabelMetaService.getInstance().releaseRef();
             }
-
+            if (brpc) {
+                BrpcClientManager.getInstance().releaseRef();
+            }
             throw new RuntimeException("Failed to start group commit loader", e);
         }
     }

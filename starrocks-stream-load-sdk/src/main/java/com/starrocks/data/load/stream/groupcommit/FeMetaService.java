@@ -25,7 +25,11 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starrocks.data.load.stream.StreamLoadUtils;
 import com.starrocks.data.load.stream.exception.StreamLoadFailException;
+import com.starrocks.data.load.stream.groupcommit.thrift.ThriftClient;
+import com.starrocks.data.load.stream.groupcommit.thrift.ThriftClientPool;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
+import com.starrocks.thrift.TGetGroupCommitMetaRequest;
+import com.starrocks.thrift.TGetGroupCommitMetaResponse;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHeaders;
@@ -39,9 +43,11 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.protocol.HttpRequestExecutor;
 import org.apache.http.util.EntityUtils;
+import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -68,6 +74,8 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
     private HttpClientBuilder clientBuilder;
     private volatile int updateIntervalMs;
     private ScheduledExecutorService executorService;
+    private ThriftClientPool thriftClientPool;
+
 
     private FeMetaService() {
         this.objectMapper = new ObjectMapper();
@@ -80,7 +88,7 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
     }
 
     @Override
-    protected void init(FeMetaConfig config) {
+    protected void init(FeMetaConfig config) throws Exception {
         this.executorService = Executors.newScheduledThreadPool(
                 config.numExecutors,
                 r -> {
@@ -100,6 +108,9 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
                         return true;
                     }
                 });
+        URL url = new URL(properties.getLoadUrls()[0]);
+        this.thriftClientPool =
+                new ThriftClientPool(url.getHost(), 9020, config.numExecutors);
         LOG.info("Init fe meta service, numExecutors: {}, updateIntervalMs: {}", config.numExecutors, updateIntervalMs);
     }
 
@@ -118,6 +129,9 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
             this.executorService.shutdownNow();
             this.executorService = null;
         }
+        if (thriftClientPool != null) {
+            thriftClientPool.close();
+        }
         beInfoMap.clear();
         LOG.info("Reset fe meta service");
     }
@@ -128,11 +142,11 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
 
     private TableBeInfo createTableInfo(TableId tableId) {
         TableBeInfo tableBeInfo = new TableBeInfo(tableId);
-        this.executorService.schedule(() -> getTableBeInfo(tableBeInfo), 0, TimeUnit.MILLISECONDS);
+        this.executorService.schedule(() -> getTableBeInfoByHttp(tableBeInfo), 0, TimeUnit.MILLISECONDS);
         return tableBeInfo;
     }
 
-    private void getTableBeInfo(TableBeInfo info) {
+    private void getTableBeInfoByHttp(TableBeInfo info) {
         String database = info.tableId.db;
         String table = info.tableId.table;
         try {
@@ -152,7 +166,6 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
                 try (CloseableHttpResponse response = client.execute(httpPut)) {
                     responseBody = parseHttpResponse(database, table, response);
                 }
-                LOG.info("Get table be info, db: {}, table: {}, response: {}", database, table, responseBody);
                 Response response = objectMapper.readValue(responseBody, Response.class);
                 String status = response.getStatus();
                 if (status == null) {
@@ -178,12 +191,60 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
                             String.format("empty brpc addresses, db: %s, table: %s", database, table));
                 }
                 info.updateAddresses(httpAddresses, brpcAddresses);
-
+                LOG.info("Update table be info, db: {}, table: {}, http: {}, brpc: {}",
+                        database, table, httpAddresses, brpcAddresses);
             }
         } catch (Exception e) {
             LOG.error("Failed to get be table info, db: {}, table: {}", database, table, e);
         }
-        this.executorService.schedule(() -> getTableBeInfo(info), updateIntervalMs, TimeUnit.MILLISECONDS);
+        this.executorService.schedule(() -> getTableBeInfoByThrift(info), updateIntervalMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void getTableBeInfoByThrift(TableBeInfo info) {
+        String database = info.tableId.db;
+        String table = info.tableId.table;
+        ThriftClient client = null;
+        try {
+            client = thriftClientPool.borrowClient();
+            TGetGroupCommitMetaRequest request = new TGetGroupCommitMetaRequest();
+            request.addToDbs(info.tableId.db);
+            request.addToTables(info.tableId.table);
+            TGetGroupCommitMetaResponse response = client.getService().getGroupCommitMeta(request);
+            List<WorkerAddress> httpAddresses;
+            if (response.isSetBe_http_metas() && !response.getBe_http_metas().isEmpty()) {
+                String httpAddressesStr = response.getBe_http_metas().get(0);
+                httpAddresses = parseAddresses(httpAddressesStr);
+            } else {
+                throw new StreamLoadFailException(
+                        String.format("empty http addresses, db: %s, table: %s", database, table));
+            }
+
+            List<WorkerAddress> brpcAddresses;
+            if (response.isSetBe_brpc_metas() && !response.getBe_brpc_metas().isEmpty()) {
+                String brpcAddressesStr = response.getBe_brpc_metas().get(0);
+                brpcAddresses = parseAddresses(brpcAddressesStr);
+            } else {
+                throw new StreamLoadFailException(
+                        String.format("empty brpc addresses, db: %s, table: %s", database, table));
+            }
+            info.updateAddresses(httpAddresses, brpcAddresses);
+            LOG.info("Update table be info, db: {}, table: {}, http: {}, brpc: {}",
+                    database, table, httpAddresses, brpcAddresses);
+        } catch (Exception e) {
+            if (LOG.isDebugEnabled() || !(e.getMessage().contains("Socket is closed by peer"))) {
+                LOG.error("Failed to get be table info, db: {}, table: {}, client: {}",
+                        database, table, client == null ? null : client.getId(), e);
+            }
+            if (client != null && e instanceof TTransportException) {
+                thriftClientPool.removeClient(client);
+                client = null;
+            }
+        } finally {
+            if (client != null) {
+                thriftClientPool.returnClient(client);
+            }
+        }
+        this.executorService.schedule(() -> getTableBeInfoByThrift(info), updateIntervalMs, TimeUnit.MILLISECONDS);
     }
 
     private List<WorkerAddress> parseAddresses(String beAddressList) {
@@ -288,7 +349,7 @@ public class FeMetaService extends SharedService<FeMetaService.FeMetaConfig> {
 
     public static class FeMetaConfig {
         StreamLoadProperties properties;
-        int numExecutors = 2;
+        int numExecutors = 1;
         int updateIntervalMs = 60000;
     }
 

@@ -128,9 +128,12 @@ public class LabelMetaService extends SharedService<LabelMetaService.LabelMetaCo
         LOG.info("Reset label meta service");
     }
 
-    public CompletableFuture<LabelMeta>
-    getLabelFinalStatusAsync(TableId tableId, String label,
-                             long expectFinishTimeMs) {
+    public ThriftClientPool getThriftClientPool() {
+        return thriftClientPool;
+    }
+
+    public CompletableFuture<LabelMeta> getLabelFinalStatusAsync(TableId tableId, String label,
+                                                                 long expectFinishTimeMs) {
       LabelMeta labelMeta =
           labelHolderMap
               .computeIfAbsent(tableId, key -> new TableLabelHolder(tableId))
