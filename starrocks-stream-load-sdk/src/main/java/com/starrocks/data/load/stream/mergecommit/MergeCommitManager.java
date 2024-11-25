@@ -1,0 +1,273 @@
+package com.starrocks.data.load.stream.mergecommit;
+
+import com.starrocks.data.load.stream.EnvUtils;
+import com.starrocks.data.load.stream.LabelGeneratorFactory;
+import com.starrocks.data.load.stream.StreamLoadManager;
+import com.starrocks.data.load.stream.StreamLoadResponse;
+import com.starrocks.data.load.stream.StreamLoadSnapshot;
+import com.starrocks.data.load.stream.StreamLoadUtils;
+import com.starrocks.data.load.stream.StreamLoader;
+import com.starrocks.data.load.stream.properties.StreamLoadProperties;
+import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
+import com.starrocks.data.load.stream.v2.StreamLoadListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class MergeCommitManager implements StreamLoadManager, Serializable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MergeCommitManager.class);
+
+    private static final long serialVersionUID = 1L;
+
+    private static final int DEFAULT_FLUSH_TIMEOUT_MS = 600000;
+
+    private final StreamLoadProperties properties;
+    private final MergeCommitLoader streamLoader;
+    private final int maxRetries;
+    private final int retryIntervalInMs;
+    private final int flushIntervalMs;
+    private final int flushTimeoutMs;
+    private final long maxCacheBytes;
+    private final long maxWriteBlockCacheBytes;
+    private final Map<TableId, Table> tables = new ConcurrentHashMap<>();
+    private final AtomicLong currentCacheBytes = new AtomicLong(0L);
+    private final AtomicLong inflightBytes = new AtomicLong(0L);
+    private final Lock lock = new ReentrantLock();
+    private final Condition writable = lock.newCondition();
+    private final AtomicReference<Throwable> exception;
+    private transient Thread cacheMonitorThread;
+    private transient AtomicBoolean closed;
+
+    public MergeCommitManager(StreamLoadProperties properties) {
+        this.properties = properties;
+        this.streamLoader = new MergeCommitLoader();
+        this.maxRetries = properties.getMaxRetries();
+        this.retryIntervalInMs = properties.getRetryIntervalInMs();
+        this.flushIntervalMs = (int) properties.getExpectDelayTime();
+        String timeout = properties.getHeaders().get("timeout");
+        this.flushTimeoutMs = timeout != null ? Integer.parseInt(timeout) * 1000 : DEFAULT_FLUSH_TIMEOUT_MS;
+        this.maxCacheBytes = properties.getMaxCacheBytes();
+        this.maxWriteBlockCacheBytes = 2 * maxCacheBytes;
+        this.exception = new AtomicReference<>();
+    }
+
+    @Override
+    public void init() {
+        this.closed = new AtomicBoolean(false);
+        this.streamLoader.start(properties, this);
+        this.cacheMonitorThread = new Thread(this::monitorCache, "starrocks-cache-monitor");
+        this.cacheMonitorThread.setDaemon(true);
+        this.cacheMonitorThread.start();
+
+        LOG.info("Init merge commit manager, {}", EnvUtils.getGitInformation());
+    }
+
+    @Override
+    public void write(String uniqueKey, String database, String tableName, String... rows) {
+        Table table = getTable(database, tableName);
+        for (String row : rows) {
+            checkException();
+            int bytes = table.write(row.getBytes(StandardCharsets.UTF_8));
+            currentCacheBytes.addAndGet(bytes);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Write record, database {}, table {}, row {}", database, tableName, row);
+            }
+            checkCacheFull();
+        }
+    }
+
+    private void checkCacheFull() {
+        if (currentCacheBytes.get() < maxWriteBlockCacheBytes) {
+            return;
+        }
+        lock.lock();
+        try {
+            int idx = 0;
+            while (currentCacheBytes.get() >= maxWriteBlockCacheBytes) {
+                checkException();
+                LOG.info("Cache full, wait flush, currentBytes: {}, maxWriteBlockCacheBytes: {}",
+                        currentCacheBytes.get(), maxWriteBlockCacheBytes);
+                writable.await(Math.min(++idx, 5), TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException ex) {
+            exception.compareAndSet(null, ex);
+            throw new RuntimeException(ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void monitorCache() {
+        List<Table> cachedTables = new ArrayList<>();
+        while (!closed.get()) {
+            long memoryBytes = currentCacheBytes.get() - inflightBytes.get();
+            if (memoryBytes >= maxCacheBytes * 3 / 2) {
+                if (tables.size() > cachedTables.size()) {
+                    cachedTables.clear();
+                    cachedTables.addAll(tables.values());
+                }
+                Collections.shuffle(cachedTables);
+                long expectEvictBytes = memoryBytes - maxCacheBytes;
+                LOG.debug("Start to evict cache, maxCacheBytes: {}, cacheBytes: {}, inflightBytes: {}, expectEvictBytes: {}",
+                        maxWriteBlockCacheBytes, currentCacheBytes.get(), inflightBytes.get(), expectEvictBytes);
+                long evictedSize = 0;
+                int numTables = 0;
+                for (Table table : cachedTables) {
+                    if (evictedSize < expectEvictBytes) {
+                        long size = table.cacheEvict();
+                        evictedSize += size;
+                        numTables += 1;
+                        LOG.debug("Evict table, db: {}, table: {}, bytes: {}", table.getDatabase(), table.getTable(), size);
+                    } else {
+                        break;
+                    }
+                }
+                LOG.debug("Finish to evict cache, maxCacheBytes: {}, cacheBytes: {}, inflightBytes: {}, " +
+                                "expectEvictBytes: {}, actualEvictBytes: {}, numTables: {}",
+                        maxWriteBlockCacheBytes, currentCacheBytes.get(), inflightBytes.get(), expectEvictBytes,
+                        evictedSize, numTables);
+            }
+            try {
+                Thread.sleep(200);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+    }
+
+    public void onLoadStart(Table table, long dataSize) {
+        inflightBytes.addAndGet(dataSize);
+        LOG.debug("Receive load start, db: {}, table: {}, dataSize: {}, inflightBytes: {}",
+                table.getDatabase(), table.getTable(), dataSize, inflightBytes.get());
+    }
+
+    public void onLoadSuccess(Table table, StreamLoadResponse response) {
+        long cacheByteBeforeFlush = currentCacheBytes.getAndAdd(-response.getFlushBytes());
+        inflightBytes.addAndGet(-response.getFlushBytes());
+        LOG.debug("Receive load success, db: {}, table: {}, cacheByteBeforeFlush: {}, currentCacheBytes: {}",
+                table.getDatabase(), table.getTable(), cacheByteBeforeFlush, currentCacheBytes.get());
+        lock.lock();
+        try {
+            writable.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void onLoadFailure(Table table, Throwable throwable) {
+        this.exception.compareAndSet(null, throwable);
+        LOG.debug("Receive load failure, db: {}, table: {}", table.getDatabase(), table.getTable(), throwable);
+    }
+
+    public Throwable getException() {
+        return exception.get();
+    }
+
+    @Override
+    public void flush() {
+        for (Table table : tables.values()) {
+            try {
+                table.flush(false);
+            } catch (Exception e) {
+                exception.compareAndSet(null, e);
+                throw new RuntimeException(e);
+            }
+        }
+        for (Table table : tables.values()) {
+            try {
+                table.flush(true);
+            } catch (Exception e) {
+                exception.compareAndSet(null, e);
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    @Override
+    public void close() {
+        closed.set(true);
+        if (cacheMonitorThread != null) {
+            cacheMonitorThread.interrupt();
+        }
+        streamLoader.close();
+    }
+
+    private void checkException() {
+        if (exception.get() != null) {
+            throw new RuntimeException(exception.get());
+        }
+    }
+
+    private Table getTable(String database, String tableName) {
+        TableId tableId = TableId.of(database, tableName);
+        Table table = tables.get(tableId);
+        if (table == null) {
+            StreamLoadTableProperties tableProperties = properties.getTableProperties(
+                    StreamLoadUtils.getTableUniqueKey(database, tableName), database, tableName);
+            table = new Table(database, tableName, this, streamLoader,
+                    tableProperties, maxRetries, retryIntervalInMs, flushIntervalMs, flushTimeoutMs,
+                    properties.getDefaultTableProperties().getChunkLimit());
+            tables.put(tableId, table);
+        }
+        return table;
+    }
+
+    public StreamLoader getStreamLoader() {
+        return streamLoader;
+    }
+
+    @Override
+    public StreamLoadSnapshot snapshot() {
+        return new StreamLoadSnapshot();
+    }
+
+    @Override
+    public boolean prepare(StreamLoadSnapshot snapshot) {
+        return true;
+    }
+
+    @Override
+    public boolean commit(StreamLoadSnapshot snapshot) {
+        return true;
+    }
+
+    @Override
+    public boolean abort(StreamLoadSnapshot snapshot) {
+        return true;
+    }
+
+    @Override
+    public void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
+        // ignore
+    }
+
+    @Override
+    public void setStreamLoadListener(StreamLoadListener streamLoadListener) {
+    }
+
+    @Override
+    public void callback(StreamLoadResponse response) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void callback(Throwable e) {
+        throw new UnsupportedOperationException();
+
+    }
+}

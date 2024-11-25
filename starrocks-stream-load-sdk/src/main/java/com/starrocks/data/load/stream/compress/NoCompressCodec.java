@@ -18,33 +18,15 @@
  * limitations under the License.
  */
 
-package com.starrocks.data.load.stream;
+package com.starrocks.data.load.stream.compress;
 
-import com.starrocks.data.load.stream.v2.StreamLoadListener;
+import java.io.IOException;
+import java.io.OutputStream;
 
-public interface StreamLoadManager {
+public class NoCompressCodec implements CompressionCodec {
 
-    void init();
-    void write(String uniqueKey, String database, String table, String... rows);
-    void callback(StreamLoadResponse response);
-    void callback(Throwable e);
-    void flush();
-
-    StreamLoadSnapshot snapshot();
-    boolean prepare(StreamLoadSnapshot snapshot);
-    boolean commit(StreamLoadSnapshot snapshot);
-    boolean abort(StreamLoadSnapshot snapshot);
-    void close();
-
-    default StreamLoader getStreamLoader() {
-        throw new UnsupportedOperationException();
-    }
-
-    default void setStreamLoadListener(StreamLoadListener streamLoadListener) {
-       // ignore
-    }
-
-    default void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
-        // ignore
+    @Override
+    public OutputStream createCompressionStream(OutputStream rawOutputStream, long contentSize) throws IOException {
+        return rawOutputStream;
     }
 }

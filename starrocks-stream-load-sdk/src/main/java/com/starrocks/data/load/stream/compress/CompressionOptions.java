@@ -25,5 +25,5 @@ import net.jpountz.lz4.LZ4FrameOutputStream;
 public class CompressionOptions {
 
     public static final String LZ4_BLOCK_SIZE = "compression.lz4.block.size";
-    public static final LZ4FrameOutputStream.BLOCKSIZE DEFAULT_LZ4_BLOCK_SIZE = LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB;
+    public static final LZ4FrameOutputStream.BLOCKSIZE DEFAULT_LZ4_BLOCK_SIZE = LZ4FrameOutputStream.BLOCKSIZE.SIZE_64KB;
 }

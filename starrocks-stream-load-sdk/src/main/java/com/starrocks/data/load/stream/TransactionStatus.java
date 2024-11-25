@@ -31,4 +31,8 @@ public enum TransactionStatus {
     public boolean isSame(String status) {
         return name().equalsIgnoreCase(status);
     }
+
+    public static boolean isFinalStatus(TransactionStatus status) {
+        return status == VISIBLE || status == ABORTED || status == UNKNOWN;
+    }
 }

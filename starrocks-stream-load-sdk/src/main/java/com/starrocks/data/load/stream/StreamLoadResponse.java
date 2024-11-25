@@ -101,6 +101,7 @@ public class StreamLoadResponse implements Serializable {
         private Long readDataTimeMs;
         private Long writeDataTimeMs;
         private Long commitAndPublishTimeMs;
+        private Long leftTimeMs;
 
         public Long getNumberTotalRows() {
             return numberTotalRows;
@@ -186,6 +187,14 @@ public class StreamLoadResponse implements Serializable {
             this.commitAndPublishTimeMs = commitAndPublishTimeMs;
         }
 
+        public void setLeftTimeMs(Long leftTimeMs) {
+            this.leftTimeMs = leftTimeMs;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
         public String getState() {
             return state;
         }
@@ -232,6 +241,10 @@ public class StreamLoadResponse implements Serializable {
 
         public String getErrorURL() {
             return errorURL;
+        }
+
+        public Long getLeftTimeMs() {
+            return leftTimeMs;
         }
     }
 }

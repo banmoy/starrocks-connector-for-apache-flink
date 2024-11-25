@@ -18,33 +18,27 @@
  * limitations under the License.
  */
 
-package com.starrocks.data.load.stream;
+package com.starrocks.data.load.stream.mergecommit;
 
-import com.starrocks.data.load.stream.v2.StreamLoadListener;
+import com.starrocks.data.load.stream.Chunk;
+import com.starrocks.data.load.stream.compress.CompressionCodec;
 
-public interface StreamLoadManager {
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.Iterator;
 
-    void init();
-    void write(String uniqueKey, String database, String table, String... rows);
-    void callback(StreamLoadResponse response);
-    void callback(Throwable e);
-    void flush();
+public class ChunkCompressUtil {
 
-    StreamLoadSnapshot snapshot();
-    boolean prepare(StreamLoadSnapshot snapshot);
-    boolean commit(StreamLoadSnapshot snapshot);
-    boolean abort(StreamLoadSnapshot snapshot);
-    void close();
-
-    default StreamLoader getStreamLoader() {
-        throw new UnsupportedOperationException();
-    }
-
-    default void setStreamLoadListener(StreamLoadListener streamLoadListener) {
-       // ignore
-    }
-
-    default void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
-        // ignore
+    public static byte[] compress(Chunk chunk, CompressionCodec compressionCodec) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try (OutputStream compressOutputStream =
+                compressionCodec.createCompressionStream(outputStream, chunk.chunkBytes())) {
+            Iterator<byte[]> iterator = chunk.iterator();
+            while (iterator.hasNext()) {
+                compressOutputStream.write(iterator.next());
+            }
+        }
+        return outputStream.toByteArray();
     }
 }

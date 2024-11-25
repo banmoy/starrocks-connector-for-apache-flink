@@ -18,33 +18,39 @@
  * limitations under the License.
  */
 
-package com.starrocks.data.load.stream;
+package com.starrocks.data.load.stream.mergecommit;
 
-import com.starrocks.data.load.stream.v2.StreamLoadListener;
+import java.util.Objects;
 
-public interface StreamLoadManager {
+public class TableId {
+    public String db;
+    public String table;
 
-    void init();
-    void write(String uniqueKey, String database, String table, String... rows);
-    void callback(StreamLoadResponse response);
-    void callback(Throwable e);
-    void flush();
-
-    StreamLoadSnapshot snapshot();
-    boolean prepare(StreamLoadSnapshot snapshot);
-    boolean commit(StreamLoadSnapshot snapshot);
-    boolean abort(StreamLoadSnapshot snapshot);
-    void close();
-
-    default StreamLoader getStreamLoader() {
-        throw new UnsupportedOperationException();
+    public static TableId of(String db, String table) {
+        TableId tableId = new TableId();
+        tableId.db = db;
+        tableId.table = table;
+        return tableId;
     }
 
-    default void setStreamLoadListener(StreamLoadListener streamLoadListener) {
-       // ignore
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        TableId tableId = (TableId) o;
+        return Objects.equals(db, tableId.db) && Objects.equals(table, tableId.table);
     }
 
-    default void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
-        // ignore
+    @Override
+    public int hashCode() {
+        return Objects.hash(db, table);
+    }
+
+    @Override
+    public String toString() {
+        return "TableId{" +
+                "db='" + db + '\'' +
+                ", table='" + table + '\'' +
+                '}';
     }
 }

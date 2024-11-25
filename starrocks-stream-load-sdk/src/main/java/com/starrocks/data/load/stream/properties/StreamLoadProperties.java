@@ -89,6 +89,18 @@ public class StreamLoadProperties implements Serializable {
     private final int maxRetries;
     private final int retryIntervalInMs;
     private final Map<String, String> headers;
+    private final int checkLabelIntervalMs;
+    private final int checkLabelTimeoutMs;
+
+    private final int brpcMaxConnections;
+    private final int brpcMinConnections;
+    private final int brpcIoThreadNum;
+    private final int brpcWorkerThreadNum;
+    private final int httpMaxConnections;
+
+    private final int feMetaExecutorNum;
+    private final int feMetaUpdateIntervalMs;
+
 
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
@@ -123,6 +135,15 @@ public class StreamLoadProperties implements Serializable {
         this.retryIntervalInMs = builder.retryIntervalInMs;
 
         this.headers = Collections.unmodifiableMap(builder.headers);
+        this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
+        this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
+        this.brpcMaxConnections = builder.brpcMaxConnections;
+        this.brpcMinConnections = builder.brpcMinConnections;
+        this.brpcIoThreadNum = builder.brpcIoThreadNum;
+        this.brpcWorkerThreadNum = builder.brpcWorkerThreadNum;
+        this.httpMaxConnections = builder.httpMaxConnections;
+        this.feMetaExecutorNum = builder.feMetaExecutorNum;
+        this.feMetaUpdateIntervalMs = builder.feMetaUpdateIntervalMs;
     }
 
     public boolean isEnableTransaction() {
@@ -236,6 +257,42 @@ public class StreamLoadProperties implements Serializable {
         return headers;
     }
 
+    public int getCheckLabelIntervalMs() {
+        return checkLabelIntervalMs;
+    }
+
+    public int getCheckLabelTimeoutMs() {
+        return checkLabelTimeoutMs;
+    }
+
+    public int getBrpcMaxConnections() {
+        return brpcMaxConnections;
+    }
+
+    public int getBrpcMinConnections() {
+        return brpcMinConnections;
+    }
+
+    public int getBrpcIoThreadNum() {
+        return brpcIoThreadNum;
+    }
+
+    public int getBrpcWorkerThreadNum() {
+        return brpcWorkerThreadNum;
+    }
+
+    public int getHttpMaxConnections() {
+        return httpMaxConnections;
+    }
+
+    public int getFeMetaExecutorNum() {
+        return feMetaExecutorNum;
+    }
+
+    public int getFeMetaUpdateIntervalMs() {
+        return feMetaUpdateIntervalMs;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -271,6 +328,16 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
+        private int checkLabelIntervalMs = 100;
+        private int checkLabelTimeoutMs = 60000;
+        private int brpcMaxConnections = 5;
+        private int brpcMinConnections = 2;
+        private int brpcIoThreadNum = -1;
+        private int brpcWorkerThreadNum = -1;
+        private int httpMaxConnections = 3;
+
+        private int feMetaExecutorNum = 2;
+        private int feMetaUpdateIntervalMs = 60000;
 
         public Builder jdbcUrl(String jdbcUrl) {
             this.jdbcUrl = jdbcUrl;
@@ -431,6 +498,51 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder addHeaders(Map<String, String> headers) {
             this.headers.putAll(headers);
+            return this;
+        }
+
+        public Builder setCheckLabelIntervalMs(int checkLabelIntervalMs) {
+            this.checkLabelIntervalMs = checkLabelIntervalMs;
+            return this;
+        }
+
+        public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
+            this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcMaxConnections(int brpcMaxConnections) {
+            this.brpcMaxConnections = brpcMaxConnections;
+            return this;
+        }
+
+        public Builder setBrpcMinConnections(int brpcMinConnections) {
+            this.brpcMinConnections = brpcMinConnections;
+            return this;
+        }
+
+        public Builder setBrpcIoThreadNum(int brpcIoThreadNum) {
+            this.brpcIoThreadNum = brpcIoThreadNum;
+            return this;
+        }
+
+        public Builder setBrpcWorkerThreadNum(int brpcWorkerThreadNum) {
+            this.brpcWorkerThreadNum = brpcWorkerThreadNum;
+            return this;
+        }
+
+        public Builder setHttpMaxConnections(int httpMaxConnections) {
+            this.httpMaxConnections = httpMaxConnections;
+            return this;
+        }
+
+        public Builder setFeMetaExecutorNum(int num) {
+            this.feMetaExecutorNum = num;
+            return this;
+        }
+
+        public Builder setFeMetaUpdateIntervalMs(int intervalMs) {
+            this.feMetaUpdateIntervalMs = intervalMs;
             return this;
         }
 
