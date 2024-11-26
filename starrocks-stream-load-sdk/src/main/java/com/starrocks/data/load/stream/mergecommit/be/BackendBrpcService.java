@@ -72,10 +72,13 @@ public class BackendBrpcService extends SharedService {
 
     private BrpcEndpoint createEndpoint(WorkerAddress address) {
         try {
+            long start = System.currentTimeMillis();
             Endpoint endpoint = new Endpoint(address.host, Integer.parseInt(address.port));
             RpcClient rpcClient = new RpcClient(endpoint, config.clientOptions);
+            long proxyStart = System.currentTimeMillis();
             PBrpcServiceAsync service = BrpcProxy.getProxy(rpcClient, PBrpcServiceAsync.class);
-            LOG.info("Create brpc client, {}", address);
+            LOG.info("Create brpc client, create cost: {} ms, proxy cost: {} ms, {}",
+                    proxyStart - start, System.currentTimeMillis() - proxyStart, address);
             return new BrpcEndpoint(address, rpcClient, service);
         } catch (Exception e) {
             LOG.error("Failed to create brpc client, {}", address, e);
