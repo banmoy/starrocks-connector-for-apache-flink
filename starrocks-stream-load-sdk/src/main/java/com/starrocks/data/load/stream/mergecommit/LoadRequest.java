@@ -24,6 +24,7 @@ public class LoadRequest {
     // MergeCommitLoader#sendBrpc
     public long executeTimeMs;
     public long compressTimeMs;
+    public long getBrpcAddrTimeMs;
     public long callRpcTimeMs;
     public long receiveResponseTimeMs;
     public long labelFinalTimeMs;

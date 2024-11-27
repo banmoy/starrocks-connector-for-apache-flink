@@ -160,6 +160,8 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             loadRequest.compressTimeMs = System.currentTimeMillis();
             Future<WorkerAddress> brpcAddressFuture = feMetaService.getNodesStateService()
                     .get().getBrpcAddress(tableId, table.getLoadParameters());
+            WorkerAddress workerAddress = brpcAddressFuture.get();
+            loadRequest.getBrpcAddrTimeMs = System.currentTimeMillis();
             String userLabel = UUID.randomUUID().toString();
             loadRequest.setLabel(userLabel);
             PStreamLoadRequest request = new PStreamLoadRequest();
@@ -173,7 +175,6 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             request.setParameters(parameters);
             RpcContext.getContext().setRequestBinaryAttachment(data);
             LoadRpcCallback callback = new LoadRpcCallback(loadRequest);
-            WorkerAddress workerAddress = brpcAddressFuture.get();
             loadRequest.workerAddress = workerAddress;
             brpcService.streamLoad(workerAddress, request, callback);
             loadRequest.callRpcTimeMs = System.currentTimeMillis();
@@ -234,7 +235,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
         LOG.info(
                 "Cost trace, db: {}, table: {}, chunkId: {}, userLabel: {}, worker: {}, raw/compress: {}/{}, "
                         +
-                        "total: {}, pending: {}, compress: {}, callRpc: {}, server: {}, "
+                        "total: {}, pending: {}, compress: {}, getBrpcAddr: {}, callRpc: {}, server: {}, "
                         +
                         "waitLabel:  {}",
                 request.getTable().getDatabase(), request.getTable().getTable(),
@@ -242,7 +243,8 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                 request.rawSize, request.compressSize, request.labelFinalTimeMs - request.createTimeMs,
                 request.executeTimeMs - request.createTimeMs,
                 request.compressTimeMs - request.executeTimeMs,
-                request.callRpcTimeMs - request.compressTimeMs,
+                request.getBrpcAddrTimeMs - request.compressTimeMs,
+                request.callRpcTimeMs - request.getBrpcAddrTimeMs,
                 request.receiveResponseTimeMs - request.callRpcTimeMs,
                 request.labelFinalTimeMs - request.receiveResponseTimeMs);
     }

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BackendBrpcService extends SharedService {
 
@@ -67,34 +68,55 @@ public class BackendBrpcService extends SharedService {
     }
 
     private PBrpcServiceAsync getBackendService(WorkerAddress address) {
-        return endpointMap.computeIfAbsent(address, this::createEndpoint).service;
+        return endpointMap.computeIfAbsent(address, BrpcEndpoint::new).getService();
     }
 
-    private BrpcEndpoint createEndpoint(WorkerAddress address) {
-        try {
-            long start = System.currentTimeMillis();
-            Endpoint endpoint = new Endpoint(address.getHost(), Integer.parseInt(address.getPort()));
-            RpcClient rpcClient = new RpcClient(endpoint, config.clientOptions);
-            long proxyStart = System.currentTimeMillis();
-            PBrpcServiceAsync service = BrpcProxy.getProxy(rpcClient, PBrpcServiceAsync.class);
-            LOG.info("Create brpc client, create cost: {} ms, proxy cost: {} ms, {}",
-                    proxyStart - start, System.currentTimeMillis() - proxyStart, address);
-            return new BrpcEndpoint(address, rpcClient, service);
-        } catch (Exception e) {
-            LOG.error("Failed to create brpc client, {}", address, e);
-            throw e;
-        }
-    }
+    private class BrpcEndpoint {
+        private final WorkerAddress address;
+        private final ReentrantReadWriteLock lock;
+        private boolean initialized;
+        private RpcClient client;
+        private PBrpcServiceAsync service;
 
-    private static class BrpcEndpoint {
-        WorkerAddress address;
-        RpcClient client;
-        PBrpcServiceAsync service;
-
-        public BrpcEndpoint(WorkerAddress address, RpcClient client, PBrpcServiceAsync service) {
+        public BrpcEndpoint(WorkerAddress address) {
             this.address = address;
-            this.client = client;
-            this.service = service;
+            this.lock = new ReentrantReadWriteLock();
+        }
+
+        PBrpcServiceAsync getService() {
+            lock.readLock().lock();
+            try {
+                if (initialized) {
+                    return service;
+                }
+            } finally {
+                lock.readLock().unlock();
+            }
+
+            lock.writeLock().lock();
+            try {
+                if (initialized) {
+                    return service;
+                }
+                long start = System.currentTimeMillis();
+                Endpoint endpoint = new Endpoint(address.getHost(), Integer.parseInt(address.getPort()));
+                this.client = new RpcClient(endpoint, config.clientOptions);
+                long proxyStart = System.currentTimeMillis();
+                this.service = BrpcProxy.getProxy(client, PBrpcServiceAsync.class);
+                initialized = true;
+                LOG.info("Create brpc client, create cost: {} ms, proxy cost: {} ms, {}",
+                        proxyStart - start, System.currentTimeMillis() - proxyStart, address);
+                return service;
+            } catch (Exception e) {
+                if (client != null) {
+                    client.stop();
+                    client = null;
+                }
+                LOG.error("Failed to create brpc client, {}", address, e);
+                throw e;
+            } finally {
+                lock.writeLock().unlock();
+            }
         }
     }
 
