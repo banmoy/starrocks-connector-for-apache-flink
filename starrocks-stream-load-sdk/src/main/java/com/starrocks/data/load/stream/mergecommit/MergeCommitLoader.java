@@ -163,7 +163,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             WorkerAddress workerAddress = brpcAddressFuture.get();
             loadRequest.getBrpcAddrTimeMs = System.currentTimeMillis();
             String userLabel = UUID.randomUUID().toString();
-            loadRequest.setLabel(userLabel);
+            loadRequest.setUserLabel(userLabel);
             PStreamLoadRequest request = new PStreamLoadRequest();
             request.setDb(database);
             request.setTable(tableName);
@@ -233,14 +233,15 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
     private static void logRequestTrace(LoadRequest request,
                                         LabelStateService.LabelMeta labelMeta) {
         LOG.info(
-                "Cost trace, db: {}, table: {}, chunkId: {}, userLabel: {}, worker: {}, raw/compress: {}/{}, "
+                "Cost trace, db: {}, table: {}, chunkId: {}, userLabel: {}, txnLabel: {}, worker: {}, raw/compress: {}/{}, "
                         +
                         "total: {}, pending: {}, compress: {}, getBrpcAddr: {}, callRpc: {}, server: {}, "
                         +
                         "waitLabel:  {}",
                 request.getTable().getDatabase(), request.getTable().getTable(),
-                request.getChunk().getChunkId(), request.getLabel(), request.workerAddress.getHost(),
-                request.rawSize, request.compressSize, request.labelFinalTimeMs - request.createTimeMs,
+                request.getChunk().getChunkId(), request.getUserLabel(), request.getResponse().getBody().getLabel(),
+                request.workerAddress.getHost(),  request.rawSize, request.compressSize,
+                request.labelFinalTimeMs - request.createTimeMs,
                 request.executeTimeMs - request.createTimeMs,
                 request.compressTimeMs - request.executeTimeMs,
                 request.getBrpcAddrTimeMs - request.compressTimeMs,
@@ -261,10 +262,6 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             String db = request.getTable().getDatabase();
             String table = request.getTable().getTable();
 
-            LOG.info(
-                    "Receive merge commit load response, db: {}, table: {}, user label: {}, chunkId: {}, ",
-                    db, table, request.getLabel(), request.getChunk().getChunkId());
-
             request.loadResponse = response;
             String jsonResult = response.getJson_result();
             StreamLoadResponse.StreamLoadResponseBody streamLoadBody;
@@ -278,6 +275,10 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                 request.getTable().loadFinish(request, exception);
                 return;
             }
+            LOG.info(
+                    "Receive merge commit load response, db: {}, table: {}, user label: {}, chunkId: {}, txn label: {}",
+                    db, table, request.getUserLabel(), request.getChunk().getChunkId(), streamLoadBody.getLabel());
+
             StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
             streamLoadResponse.setBody(streamLoadBody);
             String status = streamLoadBody.getStatus();
@@ -288,7 +289,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                 String errorMsg = String.format(
                         "Stream load failed because of error, db: %s, table: %s, user label: %s, worker: %s, "
                                 + "response: %s",
-                        db, table, request.getLabel(), request.workerAddress.getHost(), response);
+                        db, table, request.getUserLabel(), request.workerAddress.getHost(), response);
                 Throwable throwable =
                         new StreamLoadFailException(errorMsg, streamLoadBody);
                 request.getTable().loadFinish(request, throwable);
@@ -300,9 +301,9 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             String db = request.getTable().getDatabase();
             String table = request.getTable().getTable();
             LOG.error("Send merge commit load failure, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
-                    db, table, request.getLabel(), request.getChunk().getChunkId(), request.workerAddress.getHost(), throwable);
+                    db, table, request.getUserLabel(), request.getChunk().getChunkId(), request.workerAddress.getHost(), throwable);
             String errorMsg = String.format("Send merge commit load failure, db: %s, table: %s, user label: %s, worker: %s",
-                    db, table, request.getLabel(), request.workerAddress.getHost());
+                    db, table, request.getUserLabel(), request.workerAddress.getHost());
             Throwable exception = new StreamLoadFailException(errorMsg, throwable);
             request.getTable().loadFinish(request, exception);
         }

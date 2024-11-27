@@ -15,7 +15,7 @@ public class LoadRequest {
     private final Chunk chunk;
     private final AtomicInteger numRetries;
     private final List<Throwable> throwables;
-    private String label;
+    private String userLabel;
     private StreamLoadResponse response;
     private CompletableFuture<?> future;
 
@@ -57,12 +57,12 @@ public class LoadRequest {
         return chunk;
     }
 
-    public void setLabel(String label) {
-        this.label = label;
+    public void setUserLabel(String userLabel) {
+        this.userLabel = userLabel;
     }
 
-    public String getLabel() {
-        return label;
+    public String getUserLabel() {
+        return userLabel;
     }
 
     public void setResponse(StreamLoadResponse response) {
@@ -98,7 +98,7 @@ public class LoadRequest {
     }
 
     public void reset() {
-        label = null;
+        userLabel = null;
         response = null;
         future = null;
     }
