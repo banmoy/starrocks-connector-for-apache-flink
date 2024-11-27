@@ -23,8 +23,8 @@ package com.starrocks.data.load.stream.mergecommit;
 import java.util.Objects;
 
 public class WorkerAddress {
-    public String host;
-    public String port;
+    private final String host;
+    private final String port;
 
     public WorkerAddress(String host, String port) {
         this.host = host;

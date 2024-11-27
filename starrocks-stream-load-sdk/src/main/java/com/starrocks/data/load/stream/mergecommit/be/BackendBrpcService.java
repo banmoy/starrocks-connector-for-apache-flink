@@ -28,7 +28,7 @@ public class BackendBrpcService extends SharedService {
     private final BrpcConfig config;
     private final ConcurrentHashMap<WorkerAddress, BrpcEndpoint> endpointMap;
 
-    private BackendBrpcService(BrpcConfig config) {
+    public BackendBrpcService(BrpcConfig config) {
         this.config = config;
         this.endpointMap = new ConcurrentHashMap<>();
     }
@@ -73,7 +73,7 @@ public class BackendBrpcService extends SharedService {
     private BrpcEndpoint createEndpoint(WorkerAddress address) {
         try {
             long start = System.currentTimeMillis();
-            Endpoint endpoint = new Endpoint(address.host, Integer.parseInt(address.port));
+            Endpoint endpoint = new Endpoint(address.getHost(), Integer.parseInt(address.getPort()));
             RpcClient rpcClient = new RpcClient(endpoint, config.clientOptions);
             long proxyStart = System.currentTimeMillis();
             PBrpcServiceAsync service = BrpcProxy.getProxy(rpcClient, PBrpcServiceAsync.class);
@@ -106,42 +106,59 @@ public class BackendBrpcService extends SharedService {
         }
     }
 
-    public static void main(String[] args) throws Exception {
+    private static void runOnClient() {
         RpcClientOptions clientOptions = new RpcClientOptions();
         clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
         clientOptions.setConnectTimeoutMillis(1000);
         clientOptions.setReadTimeoutMillis(60000);
         clientOptions.setWriteTimeoutMillis(1000);
         clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
-        clientOptions.setMaxTotalConnections(10);
-        clientOptions.setMinIdleConnections(10);
+        clientOptions.setMaxTotalConnections(5);
+        clientOptions.setMinIdleConnections(2);
         clientOptions.setMaxTryTimes(3);
         clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
         clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
         clientOptions.setIoThreadNum(Runtime.getRuntime().availableProcessors());
         clientOptions.setWorkThreadNum(Runtime.getRuntime().availableProcessors());
         BackendBrpcService.BrpcConfig brpcConfig = new BackendBrpcService.BrpcConfig(clientOptions);
-        BackendBrpcService service = BackendBrpcService.getInstance(brpcConfig);
-        service.takeRef();
-        WorkerAddress address = new WorkerAddress("127.0.0.1", "11914");
-        PStreamLoadRequest request = new PStreamLoadRequest();
-        request.setDb("test");
-        request.setTable("tbl");
-        request.setUser("root");
-        request.setPasswd("");
-        List<PStringPair> parameters = new ArrayList<>();
-        parameters.add(PStringPair.of("label", "test_abcd"));
-        parameters.add(PStringPair.of("enable_merge_commit", "true"));
-        parameters.add(PStringPair.of("merge_commit_interval_ms", "1000"));
-        parameters.add(PStringPair.of("merge_commit_async", "false"));
-        parameters.add(PStringPair.of("merge_commit_parallel", "4"));
-        parameters.add(PStringPair.of("format", "json"));
-        parameters.add(PStringPair.of("timeout", "60"));
-        request.setParameters(parameters);
-        byte[] data = "{\"c0\":9,\"c1\":\"12\"}".getBytes();
-        RpcContext.getContext().setRequestBinaryAttachment(data);
-        Future<PStreamLoadResponse> responseFuture = service.streamLoad(address, request, new TestRpcCallback());
-        System.out.println(responseFuture.get());
+        BackendBrpcService service = new BackendBrpcService(brpcConfig);
+        try {
+            service.takeRef();
+            WorkerAddress address = new WorkerAddress("127.0.0.1", "11914");
+            PStreamLoadRequest request = new PStreamLoadRequest();
+            request.setDb("test");
+            request.setTable("tbl");
+            request.setUser("root");
+            request.setPasswd("");
+            List<PStringPair> parameters = new ArrayList<>();
+            parameters.add(PStringPair.of("label", "test_abcd"));
+            parameters.add(PStringPair.of("enable_merge_commit", "true"));
+            parameters.add(PStringPair.of("merge_commit_interval_ms", "1000"));
+            parameters.add(PStringPair.of("merge_commit_async", "false"));
+            parameters.add(PStringPair.of("merge_commit_parallel", "4"));
+            parameters.add(PStringPair.of("format", "json"));
+            parameters.add(PStringPair.of("timeout", "60"));
+            request.setParameters(parameters);
+            byte[] data = "{\"c0\":9,\"c1\":\"12\"}".getBytes();
+            RpcContext.getContext().setRequestBinaryAttachment(data);
+            Future<PStreamLoadResponse> responseFuture = service.streamLoad(address, request, new TestRpcCallback());
+            responseFuture.get();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            service.releaseRef();
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            threads.add(new Thread(BackendBrpcService::runOnClient));
+        }
+        threads.forEach(Thread::start);
+        for (Thread thread : threads) {
+            thread.join();
+        }
     }
 
     private static class TestRpcCallback implements RpcCallback<PStreamLoadResponse> {

@@ -19,6 +19,7 @@ public class LoadRequest {
     private StreamLoadResponse response;
     private CompletableFuture<?> future;
 
+    public WorkerAddress workerAddress;
     public final long createTimeMs;
     // MergeCommitLoader#sendBrpc
     public long executeTimeMs;
