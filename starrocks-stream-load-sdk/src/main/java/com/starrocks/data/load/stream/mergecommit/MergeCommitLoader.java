@@ -67,9 +67,9 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
 
             RpcClientOptions clientOptions = new RpcClientOptions();
             clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
-            clientOptions.setConnectTimeoutMillis(60000);
-            clientOptions.setReadTimeoutMillis(60000);
-            clientOptions.setWriteTimeoutMillis(60000);
+            clientOptions.setConnectTimeoutMillis(600000);
+            clientOptions.setReadTimeoutMillis(600000);
+            clientOptions.setWriteTimeoutMillis(600000);
             clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
             clientOptions.setMaxTotalConnections(properties.getBrpcMaxConnections());
             clientOptions.setMinIdleConnections(properties.getBrpcMinConnections());
