@@ -180,22 +180,43 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
 
     @Override
     public void flush() {
+        long totalTriggerTime = 0;
+        long maxTriggerTime = Long.MIN_VALUE;
+        long minTriggerTime = Long.MAX_VALUE;
         for (Table table : tables.values()) {
+            long start = System.currentTimeMillis();
             try {
                 table.flush(false);
             } catch (Exception e) {
                 exception.compareAndSet(null, e);
                 throw new RuntimeException(e);
             }
+            long duration = System.currentTimeMillis() - start;
+            totalTriggerTime += duration;
+            maxTriggerTime = Math.max(maxTriggerTime, duration);
+            minTriggerTime = Math.min(minTriggerTime, duration);
         }
+
+        long totalWaitTime = 0;
+        long maxWaitTime = Long.MIN_VALUE;
+        long minWaitTime = Long.MAX_VALUE;
         for (Table table : tables.values()) {
+            long start = System.currentTimeMillis();
             try {
                 table.flush(true);
             } catch (Exception e) {
                 exception.compareAndSet(null, e);
                 throw new RuntimeException(e);
             }
+            long duration = System.currentTimeMillis() - start;
+            totalWaitTime += duration;
+            maxWaitTime = Math.max(maxWaitTime, duration);
+            minWaitTime = Math.min(minWaitTime, duration);
         }
+        LOG.info("Flush {} tables, total cost: {} ms, trigger cost: {} ms, wait cost: {} ms, " +
+            "min trigger cost: {} ms, max trigger cost: {} ms, min wait cost: {} ms, max wait cost: {} ms",
+                tables.size(), totalTriggerTime + totalWaitTime, totalTriggerTime, totalWaitTime, minTriggerTime,
+                maxTriggerTime, minWaitTime, maxWaitTime);
     }
 
     @Override

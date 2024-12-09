@@ -118,36 +118,37 @@ public class LabelStateService implements Closeable {
 
     private void checkLabelState(LabelMeta labelMeta) {
       labelMeta.numRetries += 1;
+      TransactionStatus status = null;
       try {
-        Pair<Integer, String> pair = httpService.getLabelState(labelMeta.tableId.db, labelMeta.label);
-        if (pair.getKey() != 200) {
-            throw new Exception("Http response code is not 200, code: " + pair.getKey() + ", body: " + pair.getValue());
-        }
-        if (pair.getValue() == null) {
-            throw new Exception("Http response body is null");
-        }
+            Pair<Integer, String> pair = httpService.getLabelState(labelMeta.tableId.db, labelMeta.label);
+            if (pair.getKey() != 200) {
+                throw new Exception("Http response code is not 200, code: " + pair.getKey() + ", body: " + pair.getValue());
+            }
+            if (pair.getValue() == null) {
+                throw new Exception("Http response body is null");
+            }
 
-        LabelResponse response = objectMapper.readValue(pair.getValue(), LabelResponse.class);
-        if (response.status == null || !response.status.equalsIgnoreCase("OK")) {
-            throw new Exception("Wrong status: " + pair.getValue());
-        }
+            LabelResponse response = objectMapper.readValue(pair.getValue(), LabelResponse.class);
+            if (response.status == null || !response.status.equalsIgnoreCase("OK")) {
+                throw new Exception("Wrong status: " + pair.getValue());
+            }
 
-        TransactionStatus status = TransactionStatus.valueOf(response.state.toUpperCase());
-        if (TransactionStatus.isFinalStatus(status)) {
-            labelMeta.finishTimeMs = System.currentTimeMillis();
-          labelMeta.transactionStatus = status;
-          labelMeta.future.complete(labelMeta);
-          long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
-          LOG.info(
-              "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
-              labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
-              costMs, labelMeta.numRetries, status);
-          return;
-        }
-        LOG.debug(
-            "Label is not in final status, db: {}, table: {}, label: {}, status: {}",
-            labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
-            status);
+            status = TransactionStatus.valueOf(response.state.toUpperCase());
+            if (TransactionStatus.isFinalStatus(status)) {
+                labelMeta.finishTimeMs = System.currentTimeMillis();
+              labelMeta.transactionStatus = status;
+              labelMeta.future.complete(labelMeta);
+              long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
+              LOG.info(
+                  "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
+                  labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+                  costMs, labelMeta.numRetries, status);
+              return;
+            }
+            LOG.debug(
+                "Label is not in final status, db: {}, table: {}, label: {}, status: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
+                status);
         } catch (Exception e) {
             LOG.error("Failed to get label state, db: {}, table: {}, label: {}",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, e);
@@ -175,8 +176,8 @@ public class LabelStateService implements Closeable {
         }
 
         executorService.schedule(() -> checkLabelState(labelMeta), labelMeta.scheduleIntervalMs, TimeUnit.MILLISECONDS);
-        LOG.info("Retry to get label state, db: {}, table: {}, label: {}, retries: {}",
-                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.numRetries);
+        LOG.info("Retry to get label state, db: {}, table: {}, label: {}, status: {}. retries: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, labelMeta.numRetries);
     }
 
     private void cleanUselessLabels() {
