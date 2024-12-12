@@ -3,50 +3,45 @@ package com.starrocks.data.load.stream.mergecommit;
 import com.starrocks.data.load.stream.Chunk;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.mergecommit.be.PStreamLoadResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Iterator;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class LoadRequest {
 
+    private static final Logger LOG = LoggerFactory.getLogger(LoadRequest.class);
+
     private final Table table;
     private final Chunk chunk;
-    private final AtomicInteger numRetries;
-    private final List<Throwable> throwables;
-    private String userLabel;
-    private StreamLoadResponse response;
-    private CompletableFuture<?> future;
+    private final int maxRetries;
+    private final int baseRetryIntervalMs;
+    private final int maxRetryIntervalMs;
+    private final AtomicInteger numRuns;
+    private final ConcurrentLinkedDeque<RequestRun> requestRuns = new ConcurrentLinkedDeque<>();
 
-    public WorkerAddress workerAddress;
-    public final long createTimeMs;
-    // MergeCommitLoader#sendBrpc
-    public long executeTimeMs;
-    public long compressTimeMs;
-    public long getBrpcAddrTimeMs;
-    public long callRpcTimeMs;
-    public long receiveResponseTimeMs;
-    public long labelFinalTimeMs;
-
-    public long rawSize;
-    public long compressSize;
-    PStreamLoadResponse loadResponse;
-
-    public LoadRequest(Table table, Chunk chunk) {
+    public LoadRequest(Table table, Chunk chunk, int maxRetries, int baseRetryIntervalMs, int maxRetryIntervalMs) {
         this.table = table;
         this.chunk = chunk;
-        this.numRetries = new AtomicInteger(0);
-        this.throwables = new ArrayList<>();
-        this.createTimeMs = System.currentTimeMillis();
+        this.maxRetries = maxRetries;
+        this.baseRetryIntervalMs = baseRetryIntervalMs;
+        this.maxRetryIntervalMs = maxRetryIntervalMs;
+        this.numRuns = new AtomicInteger(0);
     }
 
-    public void incRetries() {
-        numRetries.getAndIncrement();
-    }
-
-    public int getRetries() {
-        return numRetries.get();
+    public int nextRetryInterval() {
+        if (baseRetryIntervalMs <= 0 || maxRetryIntervalMs <= 0 || numRuns.get() >= maxRetries + 1) {
+            return -1;
+        }
+        int retries = numRuns.get() - 1;
+        int delay = baseRetryIntervalMs * (int) Math.pow(2, retries);
+        delay = delay + ThreadLocalRandom.current().nextInt(baseRetryIntervalMs);
+        return Math.min(delay, maxRetryIntervalMs);
     }
 
     public Table getTable() {
@@ -57,49 +52,97 @@ public class LoadRequest {
         return chunk;
     }
 
-    public void setUserLabel(String userLabel) {
-        this.userLabel = userLabel;
+    public RequestRun newRun() {
+        int id = numRuns.getAndIncrement();
+        String userLabel = UUID.randomUUID().toString();
+        RequestRun requestRun = new RequestRun(this, id, userLabel);
+        requestRuns.add(requestRun);
+        return requestRun;
     }
 
-    public String getUserLabel() {
-        return userLabel;
+    public int getNumRuns() {
+        return numRuns.get();
     }
 
-    public void setResponse(StreamLoadResponse response) {
-        this.response = response;
+    public void stateSummary(StringBuilder builder) {
+        builder.append("chunkId: ").append(chunk.getChunkId())
+                .append(", num runs: ").append(numRuns.get());
+        int count = 0;
+        Iterator<RequestRun> iterator = requestRuns.descendingIterator();
+        while (iterator.hasNext()) {
+            RequestRun requestRun = iterator.next();
+            builder.append(", run ").append(count)
+                    .append(": {");
+            requestRun.stateSummary(builder);
+            builder.append("}");
+            count += 1;
+        }
     }
 
-    public StreamLoadResponse getResponse() {
-        return response;
+    public void logRequestTrace() {
+        StringBuilder builder = new StringBuilder();
+        stateSummary(builder);
+        LOG.info("Load request trace, db: {}, table: {}, {}",
+                getTable().getDatabase(), getTable().getTable(), builder);
     }
 
-    public void addThrowable(Throwable throwable) {
-        this.throwables.add(throwable);
+    enum State {
+        INIT,
+        SENDING_REQUEST,
+        WAITING_RESPONSE,
+        RECEIVED_RESPONSE,
+        WAITING_LABEL,
+        SUCCESS,
+        FAILED
     }
 
-    public Throwable getFirstThrowable() {
-        return throwables.isEmpty() ? null : throwables.get(0);
-    }
+    public static class RequestRun {
+        public final LoadRequest loadRequest;
+        public final int id;
+        public final String userLabel;
+        public volatile State state = State.INIT;
+        public volatile long rawSize = -1;
+        public volatile long compressSize = -1;
+        public volatile WorkerAddress workerAddress = null;
+        public volatile PStreamLoadResponse rpcResponse;
+        public volatile StreamLoadResponse loadResult;
+        public volatile CompletableFuture<?> labelFuture = null;
+        public volatile Throwable throwable = null;
 
-    public Throwable getLastThrowable() {
-        return throwables.isEmpty() ? null : throwables.get(throwables.size() - 1);
-    }
+        // Time trace
+        public volatile long createTimeMs;
+        public volatile long executeTimeMs = -1;
+        public volatile long compressTimeMs = -1;
+        public volatile long getBrpcAddrTimeMs = -1;
+        public volatile long callRpcTimeMs = -1;
+        public volatile long receiveResponseTimeMs = -1;
+        public volatile long labelFinalTimeMs = -1;
+        public volatile long finishTime = -1;
 
-    public List<Throwable> getThrowables() {
-        return throwables;
-    }
+        public RequestRun(LoadRequest loadRequest, int id, String userLabel) {
+            this.loadRequest = loadRequest;
+            this.id = id;
+            this.userLabel = userLabel;
+            this.createTimeMs = System.currentTimeMillis();
+        }
 
-    public void setFuture(CompletableFuture<?> future) {
-        this.future = future;
-    }
-
-    public CompletableFuture<?> getFuture() {
-        return future;
-    }
-
-    public void reset() {
-        userLabel = null;
-        response = null;
-        future = null;
+        public void stateSummary(StringBuilder builder) {
+            builder.append("id: ").append(id)
+                    .append(", state: ").append(state)
+                    .append(", userLabel: ").append(userLabel);
+            String txnLabel = loadResult != null && loadResult.getBody() != null ? loadResult.getBody().getLabel() : "null";
+            builder.append(", txnLabel: ").append(txnLabel);
+            String worker = workerAddress != null ? workerAddress.getHost() : "null";
+            builder.append(", worker: ").append(worker);
+            builder.append(", raw/compress: ").append(rawSize).append("/").append(compressSize);
+            builder.append(", total: ").append(finishTime - createTimeMs).append(" ms");
+            builder.append(", pending: ").append(executeTimeMs > 0 ? executeTimeMs - createTimeMs : -1).append(" ms");
+            builder.append(", compress: ").append(compressTimeMs > 0 ? compressTimeMs - executeTimeMs : -1).append(" ms");
+            builder.append(", getWorkerAddr: ").append(getBrpcAddrTimeMs > 0 ? getBrpcAddrTimeMs - compressTimeMs : -1).append(" ms");
+            builder.append(", callRpc: ").append(callRpcTimeMs > 0 ? callRpcTimeMs - getBrpcAddrTimeMs : -1).append(" ms");
+            builder.append(", server: ").append(receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1).append(" ms");
+            builder.append(", waitLabel: ").append(labelFinalTimeMs > 0 ? labelFinalTimeMs - receiveResponseTimeMs : -1).append(" ms");
+            builder.append(", exception: ").append(throwable == null ? "N/A" : throwable.getMessage());
+        }
     }
 }

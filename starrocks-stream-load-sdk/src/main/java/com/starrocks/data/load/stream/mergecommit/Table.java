@@ -45,13 +45,15 @@ public class Table {
     protected final MergeCommitLoader streamLoader;
     private final StreamLoadTableProperties properties;
     private final int maxRetries;
-    private final int retryIntervalInMs;
+    private final int baseRetryIntervalInMs;
+    private final int maxRetryIntervalMs = 30000;
     private final int flushIntervalMs;
     private final int flushTimeoutMs;
     private final long chunkSize;
     private final Optional<CompressionCodec> compressionCodec;
     private final AtomicLong chunkIdGenerator;
     private volatile Chunk activeChunk;
+    // chunk id -> request
     private final Map<Long, LoadRequest> inflightLoadRequests;
     private final AtomicLong cacheBytes = new AtomicLong();
     private final AtomicLong cacheRows = new AtomicLong();
@@ -68,7 +70,7 @@ public class Table {
             MergeCommitLoader streamLoader,
             StreamLoadTableProperties properties,
             int maxRetries,
-            int retryIntervalInMs,
+            int baseRetryIntervalInMs,
             int flushIntervalMs,
             int flushTimeoutMs,
             long chunkSize) {
@@ -78,7 +80,7 @@ public class Table {
         this.streamLoader = streamLoader;
         this.properties = properties;
         this.maxRetries = maxRetries;
-        this.retryIntervalInMs = retryIntervalInMs;
+        this.baseRetryIntervalInMs = baseRetryIntervalInMs;
         this.flushIntervalMs = flushIntervalMs;
         this.flushTimeoutMs = flushTimeoutMs;
         this.chunkSize = chunkSize;
@@ -131,10 +133,17 @@ public class Table {
             if (!wait) {
                 return;
             }
+            long awakeTimeoutNs = 20000000000L;
             long leftTimeoutNs = flushTimeoutMs * 1000000L;
             while (!inflightLoadRequests.isEmpty() && tableThrowable.get() == null) {
                 try {
-                    leftTimeoutNs = flushCondition.awaitNanos(leftTimeoutNs);
+                    long timeoutNs = Math.min(awakeTimeoutNs, leftTimeoutNs);
+                    long notElapsedNs = flushCondition.awaitNanos(timeoutNs);
+                    long elapsedNs = Math.min(0, timeoutNs - notElapsedNs);
+                    if (notElapsedNs <= 0) {
+                        LOG.info("Table is waiting flush, {}", loadRequestsSummary());
+                    }
+                    leftTimeoutNs -= elapsedNs;
                     if (leftTimeoutNs <= 0) {
                         throw new RuntimeException(String.format(
                                 "Timeout to wait flush, db: %s, table: %s, timeout: %s ms",
@@ -209,40 +218,43 @@ public class Table {
     }
 
     private void flushChunk(Chunk chunk, FlushChunkReason reason) {
-        LoadRequest request = new LoadRequest(this, chunk);
+        LoadRequest request = new LoadRequest(this, chunk, maxRetries, baseRetryIntervalInMs, maxRetryIntervalMs);
         inflightLoadRequests.put(chunk.getChunkId(), request);
         manager.onLoadStart(this, chunk.rowBytes());
-        streamLoader.sendLoad(request, 0);
+        LoadRequest.RequestRun requestRun = request.newRun();
+        streamLoader.sendLoad(requestRun, 0);
         LOG.info("Flush chunk, db: {}, table: {}, chunkId: {}, rows: {}, bytes: {}, reason: {}",
                 database, table, chunk.getChunkId(), chunk.numRows(), chunk.rowBytes(), reason);
     }
 
-    public void loadFinish(LoadRequest request, Throwable throwable) {
+    public void loadFinish(LoadRequest.RequestRun requestRun, Throwable throwable) {
+        requestRun.state = throwable == null ? LoadRequest.State.SUCCESS : LoadRequest.State.FAILED;
+        requestRun.finishTime = System.currentTimeMillis();
+        requestRun.throwable = throwable;
+        LoadRequest request = requestRun.loadRequest;
         if (throwable != null) {
-            request.addThrowable(throwable);
-            if (isRetryable(throwable) && request.getRetries() < maxRetries) {
-                request.incRetries();
-                request.reset();
-                streamLoader.sendLoad(request, retryIntervalInMs);
-                LOG.warn("Retry to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, last exception",
-                        database, table, request.getChunk().getChunkId(), request.getRetries(), throwable);
+            requestRun.throwable = throwable;
+            int retryIntervalMs = request.nextRetryInterval();
+            if (isRetryable(throwable) && retryIntervalMs > 0) {
+                LoadRequest.RequestRun nextRun = request.newRun();
+                streamLoader.sendLoad(nextRun, retryIntervalMs);
+                LOG.warn("Retry to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, retry interval: {} ms, " +
+                        "last exception", database, table, request.getChunk().getChunkId(), request.getNumRuns() - 1,
+                        retryIntervalMs,  throwable);
                 return;
             }
 
             tableThrowable.compareAndSet(null, throwable);
             manager.onLoadFailure(this, throwable);
-            LOG.error("Failed to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, last exception",
-                    database, table, request.getChunk().getChunkId(), request.getRetries(), throwable);
         } else {
             Chunk chunk = request.getChunk();
             cacheBytes.addAndGet(-chunk.rowBytes());
             cacheRows.addAndGet(-chunk.numRows());
-            request.getResponse().setFlushBytes(chunk.rowBytes());
-            request.getResponse().setFlushRows(chunk.numRows());
-            manager.onLoadSuccess(this, request.getResponse());
-            LOG.info("Success to flush chunk, db: {}, table: {}, chunkId: {}",
-                    database, table, request.getChunk().getChunkId());
+            requestRun.loadResult.setFlushBytes(chunk.rowBytes());
+            requestRun.loadResult.setFlushRows(chunk.numRows());
+            manager.onLoadSuccess(this, requestRun.loadResult);
         }
+        request.logRequestTrace();
         lock.lock();
         try {
             inflightLoadRequests.remove(request.getChunk().getChunkId());
@@ -254,5 +266,21 @@ public class Table {
 
     public Optional<CompressionCodec> getCompressionCodec() {
         return compressionCodec;
+    }
+
+    public String loadRequestsSummary() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("db: ").append(database)
+                .append(", table: ").append(table)
+                .append(", num inflight requests: ").append(inflightLoadRequests.size());
+        int count = 0;
+        for (LoadRequest request : inflightLoadRequests.values()) {
+            builder.append(", request ").append(count)
+                    .append(": {");
+            request.stateSummary(builder);
+            builder.append("}");
+            count += 1;
+        }
+        return builder.toString();
     }
 }

@@ -42,6 +42,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static com.starrocks.data.load.stream.mergecommit.LoadRequest.State.RECEIVED_RESPONSE;
+
 public class MergeCommitLoader implements StreamLoader, Serializable {
 
     private static final Logger LOG = LoggerFactory.getLogger(MergeCommitLoader.class);
@@ -67,9 +69,9 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
 
             RpcClientOptions clientOptions = new RpcClientOptions();
             clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
-            clientOptions.setConnectTimeoutMillis(600000);
+            clientOptions.setConnectTimeoutMillis(60000);
             clientOptions.setReadTimeoutMillis(600000);
-            clientOptions.setWriteTimeoutMillis(600000);
+            clientOptions.setWriteTimeoutMillis(60000);
             clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
             clientOptions.setMaxTotalConnections(properties.getBrpcMaxConnections());
             clientOptions.setMinIdleConnections(properties.getBrpcMinConnections());
@@ -142,12 +144,14 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
         return executorService.schedule(() -> table.checkFlushInterval(chunkId), delayMs, TimeUnit.MILLISECONDS);
     }
 
-    public void sendLoad(LoadRequest request, int delayMs) {
-        executorService.schedule(() -> sendBrpc(request), delayMs, TimeUnit.MILLISECONDS);
+    public void sendLoad(LoadRequest.RequestRun requestRun, int delayMs) {
+        executorService.schedule(() -> sendBrpc(requestRun), delayMs, TimeUnit.MILLISECONDS);
     }
 
-    private void sendBrpc(LoadRequest loadRequest) {
-        loadRequest.executeTimeMs = System.currentTimeMillis();
+    private void sendBrpc(LoadRequest.RequestRun requestRun) {
+        requestRun.executeTimeMs = System.currentTimeMillis();
+        requestRun.state = LoadRequest.State.SENDING_REQUEST;
+        LoadRequest loadRequest = requestRun.loadRequest;
         Table table = loadRequest.getTable();
         String database = table.getDatabase();
         String tableName = table.getTable();
@@ -155,15 +159,13 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
         try {
             byte[] data = ChunkCompressUtil.compress(loadRequest.getChunk(),
                     table.getCompressionCodec().orElseGet(NoCompressCodec::new));
-            loadRequest.rawSize = loadRequest.getChunk().chunkBytes();
-            loadRequest.compressSize = data.length;
-            loadRequest.compressTimeMs = System.currentTimeMillis();
+            requestRun.rawSize = loadRequest.getChunk().chunkBytes();
+            requestRun.compressSize = data.length;
+            requestRun.compressTimeMs = System.currentTimeMillis();
             Future<WorkerAddress> brpcAddressFuture = feMetaService.getNodesStateService()
                     .get().getBrpcAddress(tableId, table.getLoadParameters());
             WorkerAddress workerAddress = brpcAddressFuture.get();
-            loadRequest.getBrpcAddrTimeMs = System.currentTimeMillis();
-            String userLabel = UUID.randomUUID().toString();
-            loadRequest.setUserLabel(userLabel);
+            requestRun.getBrpcAddrTimeMs = System.currentTimeMillis();
             PStreamLoadRequest request = new PStreamLoadRequest();
             request.setDb(database);
             request.setTable(tableName);
@@ -171,141 +173,130 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             request.setPasswd(properties.getPassword());
             List<PStringPair> parameters = new ArrayList<>();
             table.getLoadParameters().forEach((k, v) -> parameters.add(PStringPair.of(k, v)));
-            parameters.add(PStringPair.of("label", userLabel));
+            parameters.add(PStringPair.of("label", requestRun.userLabel));
             request.setParameters(parameters);
             RpcContext.getContext().setRequestBinaryAttachment(data);
-            LoadRpcCallback callback = new LoadRpcCallback(loadRequest);
-            loadRequest.workerAddress = workerAddress;
+            LoadRpcCallback callback = new LoadRpcCallback(requestRun);
+            requestRun.workerAddress = workerAddress;
             brpcService.streamLoad(workerAddress, request, callback);
-            loadRequest.callRpcTimeMs = System.currentTimeMillis();
+            requestRun.callRpcTimeMs = System.currentTimeMillis();
+            requestRun.state = LoadRequest.State.WAITING_RESPONSE;
             LOG.info(
-                    "Send merge commit load request, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
-                    database, tableName, userLabel, loadRequest.getChunk().getChunkId(), workerAddress.getHost());
+                    "Send load request, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
+                    database, tableName, requestRun.userLabel, loadRequest.getChunk().getChunkId(), workerAddress.getHost());
         } catch (Throwable e) {
             LOG.error("Failed to send load brpc, db: {}, table: {}, chunkId: {}",
                     database, tableName, loadRequest.getChunk().getChunkId(), e);
-            table.loadFinish(loadRequest, e);
+            table.loadFinish(requestRun, e);
         }
     }
 
-    private void waitLabelAsync(LoadRequest request) {
+    private void waitLabelAsync(LoadRequest.RequestRun requestRun) {
+        LoadRequest request = requestRun.loadRequest;
         Table table = request.getTable();
-        long leftTimeMs = request.getResponse().getBody().getLeftTimeMs() == null ? -1 :
-            request.getResponse().getBody().getLeftTimeMs();
+        StreamLoadResponse loadResponse = requestRun.loadResult;
+        long leftTimeMs = loadResponse.getBody().getLeftTimeMs() == null ? -1 :
+                loadResponse.getBody().getLeftTimeMs();
         CompletableFuture<LabelStateService.LabelMeta> future =
                 feMetaService.getLabelStateService()
                         .get().getFinalStatus(
                                 TableId.of(table.getDatabase(), table.getTable()),
-                                request.getResponse().getBody().getLabel(),
+                                loadResponse.getBody().getLabel(),
                                 (int) leftTimeMs,
                                 properties.getCheckLabelIntervalMs(),
                                 properties.getCheckLabelTimeoutMs())
                         .whenCompleteAsync(
                                 (labelMeta, throwable)
-                                        -> dealLabelStatus(request, labelMeta, throwable),
+                                        -> dealLabelStatus(requestRun, labelMeta, throwable),
                                 executorService);
-        request.setFuture(future);
+        requestRun.labelFuture = future;
     }
 
-    private void dealLabelStatus(LoadRequest request,
+    private void dealLabelStatus(LoadRequest.RequestRun requestRun,
                                  LabelStateService.LabelMeta labelMeta,
                                  Throwable throwable) {
         TransactionStatus status = labelMeta.transactionStatus;
-        request.labelFinalTimeMs = System.currentTimeMillis();
+        requestRun.labelFinalTimeMs = System.currentTimeMillis();
+        LoadRequest loadRequest = requestRun.loadRequest;
         if (throwable != null) {
-            request.getTable().loadFinish(request, throwable);
+            loadRequest.getTable().loadFinish(requestRun, throwable);
             return;
         }
 
-        if (status != TransactionStatus.VISIBLE &&
-                status != TransactionStatus.COMMITTED) {
-            request.getTable().loadFinish(
-                    request,
+        if (status != TransactionStatus.VISIBLE) {
+            loadRequest.getTable().loadFinish(
+                    requestRun,
                     new RuntimeException(String.format(
                             "Label %s does not in final status, current status: %s",
-                            request.getResponse().getBody().getLabel(), status)));
+                            requestRun.loadResult.getBody().getLabel(), status)));
         } else {
-            request.getTable().loadFinish(request, null);
-            logRequestTrace(request, labelMeta);
+            loadRequest.getTable().loadFinish(requestRun, null);
         }
-    }
-
-    private static void logRequestTrace(LoadRequest request,
-                                        LabelStateService.LabelMeta labelMeta) {
-        LOG.info(
-                "Cost trace, db: {}, table: {}, chunkId: {}, userLabel: {}, txnLabel: {}, worker: {}, raw/compress: {}/{}, "
-                        +
-                        "total: {}, pending: {}, compress: {}, getBrpcAddr: {}, callRpc: {}, server: {}, "
-                        +
-                        "waitLabel:  {}",
-                request.getTable().getDatabase(), request.getTable().getTable(),
-                request.getChunk().getChunkId(), request.getUserLabel(), request.getResponse().getBody().getLabel(),
-                request.workerAddress.getHost(),  request.rawSize, request.compressSize,
-                request.labelFinalTimeMs - request.createTimeMs,
-                request.executeTimeMs - request.createTimeMs,
-                request.compressTimeMs - request.executeTimeMs,
-                request.getBrpcAddrTimeMs - request.compressTimeMs,
-                request.callRpcTimeMs - request.getBrpcAddrTimeMs,
-                request.receiveResponseTimeMs - request.callRpcTimeMs,
-                request.labelFinalTimeMs - request.receiveResponseTimeMs);
     }
 
     private class LoadRpcCallback implements RpcCallback<PStreamLoadResponse> {
 
-        private final LoadRequest request;
+        private final LoadRequest.RequestRun requestRun;
+        private PStreamLoadResponse response;
 
-        public LoadRpcCallback(LoadRequest request) { this.request = request; }
+        public LoadRpcCallback(LoadRequest.RequestRun requestRun) { this.requestRun = requestRun; }
 
         @Override
         public void success(PStreamLoadResponse response) {
-            request.receiveResponseTimeMs = System.currentTimeMillis();
-            String db = request.getTable().getDatabase();
-            String table = request.getTable().getTable();
-
-            request.loadResponse = response;
-            String jsonResult = response.getJson_result();
-            StreamLoadResponse.StreamLoadResponseBody streamLoadBody;
+            this.response = response;
+            requestRun.state = RECEIVED_RESPONSE;
+            requestRun.receiveResponseTimeMs = System.currentTimeMillis();
             try {
-                streamLoadBody = objectMapper.readValue(jsonResult, StreamLoadResponse.StreamLoadResponseBody.class);
-            } catch (Exception e) {
-                String errorMsg = "Fail to parse response, json response: " + jsonResult;
-                Throwable exception = new StreamLoadFailException(errorMsg, e);
-                LOG.error("Fail to parse response, db: {}, table: {}, worker: {}, json result: {}", db, table,
-                        request.workerAddress.getHost(), jsonResult, e);
-                request.getTable().loadFinish(request, exception);
-                return;
-            }
-            LOG.info(
-                    "Receive merge commit load response, db: {}, table: {}, user label: {}, chunkId: {}, txn label: {}",
-                    db, table, request.getUserLabel(), request.getChunk().getChunkId(), streamLoadBody.getLabel());
+                LoadRequest request = requestRun.loadRequest;
+                String db = request.getTable().getDatabase();
+                String table = request.getTable().getTable();
+                requestRun.rpcResponse = response;
+                String jsonResult = response.getJson_result();
+                StreamLoadResponse.StreamLoadResponseBody streamLoadBody;
+                try {
+                    streamLoadBody = objectMapper.readValue(jsonResult, StreamLoadResponse.StreamLoadResponseBody.class);
+                } catch (Exception e) {
+                    String errorMsg = "Fail to parse response, json response: " + jsonResult;
+                    throw new StreamLoadFailException(errorMsg, e);
+                }
 
-            StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
-            streamLoadResponse.setBody(streamLoadBody);
-            String status = streamLoadBody.getStatus();
-            if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
-                request.setResponse(streamLoadResponse);
-                waitLabelAsync(request);
-            } else {
-                String errorMsg = String.format(
-                        "Stream load failed because of error, db: %s, table: %s, user label: %s, worker: %s, "
-                                + "response: %s",
-                        db, table, request.getUserLabel(), request.workerAddress.getHost(), response);
-                Throwable throwable =
-                        new StreamLoadFailException(errorMsg, streamLoadBody);
-                request.getTable().loadFinish(request, throwable);
+                StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
+                streamLoadResponse.setBody(streamLoadBody);
+                String status = streamLoadBody.getStatus();
+                if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
+                    requestRun.loadResult = streamLoadResponse;
+                    requestRun.state = LoadRequest.State.WAITING_LABEL;
+                    waitLabelAsync(requestRun);
+                    LOG.info(
+                            "Load rpc success, db: {}, table: {}, user label: {}, chunkId: {}, txn label: {}",
+                            db, table, requestRun.userLabel, request.getChunk().getChunkId(), streamLoadBody.getLabel());
+                } else {
+                    String errorMsg = String.format(
+                            "Stream load failed because of error, db: %s, table: %s, user label: %s, worker: %s, "
+                                    + "response: %s",
+                            db, table, requestRun.userLabel, requestRun.workerAddress.getHost(), response);
+                    throw new StreamLoadFailException(errorMsg, streamLoadBody);
+                }
+            } catch (Throwable throwable) {
+                fail(throwable);
             }
         }
 
         @Override
         public void fail(Throwable throwable) {
+            if (response != null) {
+                requestRun.state = RECEIVED_RESPONSE;
+                requestRun.receiveResponseTimeMs = System.currentTimeMillis();
+            }
+            LoadRequest request = requestRun.loadRequest;
             String db = request.getTable().getDatabase();
             String table = request.getTable().getTable();
-            LOG.error("Send merge commit load failure, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
-                    db, table, request.getUserLabel(), request.getChunk().getChunkId(), request.workerAddress.getHost(), throwable);
-            String errorMsg = String.format("Send merge commit load failure, db: %s, table: %s, user label: %s, worker: %s",
-                    db, table, request.getUserLabel(), request.workerAddress.getHost());
+            LOG.error("Load request fail, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
+                    db, table, requestRun.userLabel, request.getChunk().getChunkId(), requestRun.workerAddress.getHost(), throwable);
+            String errorMsg = String.format("Load request fail, db: %s, table: %s, user label: %s, worker: %s",
+                    db, table, requestRun.userLabel, requestRun.workerAddress.getHost());
             Throwable exception = new StreamLoadFailException(errorMsg, throwable);
-            request.getTable().loadFinish(request, exception);
+            request.getTable().loadFinish(requestRun, exception);
         }
     }
 

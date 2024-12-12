@@ -176,7 +176,7 @@ public class LabelStateService implements Closeable {
         }
 
         executorService.schedule(() -> checkLabelState(labelMeta), labelMeta.scheduleIntervalMs, TimeUnit.MILLISECONDS);
-        LOG.info("Retry to get label state, db: {}, table: {}, label: {}, status: {}. retries: {}",
+        LOG.debug("Retry to get label state, db: {}, table: {}, label: {}, status: {}. retries: {}",
                 labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, labelMeta.numRetries);
     }
 
