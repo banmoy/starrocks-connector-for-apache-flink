@@ -70,7 +70,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             RpcClientOptions clientOptions = new RpcClientOptions();
             clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
             clientOptions.setConnectTimeoutMillis(60000);
-            clientOptions.setReadTimeoutMillis(600000);
+            clientOptions.setReadTimeoutMillis(60000);
             clientOptions.setWriteTimeoutMillis(60000);
             clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
             clientOptions.setMaxTotalConnections(properties.getBrpcMaxConnections());
@@ -265,6 +265,11 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                 String status = streamLoadBody.getStatus();
                 if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
                     requestRun.loadResult = streamLoadResponse;
+                    if (streamLoadBody.getLabel() == null || streamLoadBody.getLabel().isEmpty()) {
+                        throw new StreamLoadFailException(String.format("Load rpc response success with an empty label, " +
+                                "db: %s, table: %s, user label: %s, worker: %s, response: %s",
+                                    db, table, requestRun.userLabel, requestRun.workerAddress.getHost(), response));
+                    }
                     requestRun.state = LoadRequest.State.WAITING_LABEL;
                     waitLabelAsync(requestRun);
                     LOG.info(
@@ -272,7 +277,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                             db, table, requestRun.userLabel, request.getChunk().getChunkId(), streamLoadBody.getLabel());
                 } else {
                     String errorMsg = String.format(
-                            "Stream load failed because of error, db: %s, table: %s, user label: %s, worker: %s, "
+                            "Load rpc failed, db: %s, table: %s, user label: %s, worker: %s, "
                                     + "response: %s",
                             db, table, requestRun.userLabel, requestRun.workerAddress.getHost(), response);
                     throw new StreamLoadFailException(errorMsg, streamLoadBody);
