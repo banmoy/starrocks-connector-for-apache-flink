@@ -226,6 +226,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
             cacheMonitorThread.interrupt();
         }
         streamLoader.close();
+        LOG.info("Close merge commit manager");
     }
 
     private void checkException() {

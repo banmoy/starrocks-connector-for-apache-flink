@@ -50,6 +50,7 @@ public abstract class SharedService {
             if (oldCount == 0) {
                 init();
             }
+            success = true;
         } finally {
             if (!success) {
                 refCount.decrementAndGet();
@@ -65,9 +66,6 @@ public abstract class SharedService {
         int newCount;
         lock.writeLock().lock();
         try {
-            if (refCount.get() == 0) {
-                return;
-            }
             newCount = refCount.decrementAndGet();
             if (newCount == 0) {
                 reset();

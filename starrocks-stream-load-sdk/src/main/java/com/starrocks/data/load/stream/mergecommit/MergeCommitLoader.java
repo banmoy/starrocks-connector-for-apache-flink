@@ -111,6 +111,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                         });
                         return thread;
                     });
+            LOG.info("Start merge commit loader");
         } catch (Throwable e) {
             if (feMetaService != null) {
                 feMetaService.releaseRef();
@@ -138,6 +139,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             brpcService.releaseRef();
             brpcService = null;
         }
+        LOG.info("Close merge commit loader");
     }
 
     public ScheduledFuture<?> scheduleFlush(Table table, long chunkId, int delayMs) {
