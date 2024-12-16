@@ -15,8 +15,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static com.starrocks.data.load.stream.exception.ErrorUtils.isRetryable;
-
 public class Table {
 
     private static final Logger LOG = LoggerFactory.getLogger(Table.class);
@@ -45,8 +43,7 @@ public class Table {
     protected final MergeCommitLoader streamLoader;
     private final StreamLoadTableProperties properties;
     private final int maxRetries;
-    private final int baseRetryIntervalInMs;
-    private final int maxRetryIntervalMs = 30000;
+    private final int retryIntervalInMs;
     private final int flushIntervalMs;
     private final int flushTimeoutMs;
     private final long chunkSize;
@@ -70,7 +67,7 @@ public class Table {
             MergeCommitLoader streamLoader,
             StreamLoadTableProperties properties,
             int maxRetries,
-            int baseRetryIntervalInMs,
+            int retryIntervalInMs,
             int flushIntervalMs,
             int flushTimeoutMs,
             long chunkSize) {
@@ -80,7 +77,7 @@ public class Table {
         this.streamLoader = streamLoader;
         this.properties = properties;
         this.maxRetries = maxRetries;
-        this.baseRetryIntervalInMs = baseRetryIntervalInMs;
+        this.retryIntervalInMs = retryIntervalInMs;
         this.flushIntervalMs = flushIntervalMs;
         this.flushTimeoutMs = flushTimeoutMs;
         this.chunkSize = chunkSize;
@@ -218,7 +215,7 @@ public class Table {
     }
 
     private void flushChunk(Chunk chunk, FlushChunkReason reason) {
-        LoadRequest request = new LoadRequest(this, chunk, maxRetries, baseRetryIntervalInMs, maxRetryIntervalMs);
+        LoadRequest request = new LoadRequest(this, chunk, maxRetries, retryIntervalInMs);
         inflightLoadRequests.put(chunk.getChunkId(), request);
         manager.onLoadStart(this, chunk.rowBytes());
         LoadRequest.RequestRun requestRun = request.newRun();
@@ -234,8 +231,9 @@ public class Table {
         LoadRequest request = requestRun.loadRequest;
         if (throwable != null) {
             requestRun.throwable = throwable;
+            // TODO check the throwable is retryable
             int retryIntervalMs = request.nextRetryInterval();
-            if (isRetryable(throwable) && retryIntervalMs > 0) {
+            if (retryIntervalMs > 0) {
                 LoadRequest.RequestRun nextRun = request.newRun();
                 streamLoader.sendLoad(nextRun, retryIntervalMs);
                 LOG.warn("Retry to flush chunk, db: {}, table: {}, chunkId: {}, retries: {}, retry interval: {} ms, " +

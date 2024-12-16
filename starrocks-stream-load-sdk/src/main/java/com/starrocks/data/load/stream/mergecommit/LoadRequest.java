@@ -20,28 +20,23 @@ public class LoadRequest {
     private final Table table;
     private final Chunk chunk;
     private final int maxRetries;
-    private final int baseRetryIntervalMs;
-    private final int maxRetryIntervalMs;
+    private final int retryIntervalMs;
     private final AtomicInteger numRuns;
     private final ConcurrentLinkedDeque<RequestRun> requestRuns = new ConcurrentLinkedDeque<>();
 
-    public LoadRequest(Table table, Chunk chunk, int maxRetries, int baseRetryIntervalMs, int maxRetryIntervalMs) {
+    public LoadRequest(Table table, Chunk chunk, int maxRetries, int retryIntervalMs) {
         this.table = table;
         this.chunk = chunk;
         this.maxRetries = maxRetries;
-        this.baseRetryIntervalMs = baseRetryIntervalMs;
-        this.maxRetryIntervalMs = maxRetryIntervalMs;
+        this.retryIntervalMs = retryIntervalMs;
         this.numRuns = new AtomicInteger(0);
     }
 
     public int nextRetryInterval() {
-        if (baseRetryIntervalMs <= 0 || maxRetryIntervalMs <= 0 || numRuns.get() >= maxRetries + 1) {
+        if (numRuns.get() >= maxRetries + 1 || retryIntervalMs <= 0) {
             return -1;
         }
-        int retries = numRuns.get() - 1;
-        int delay = baseRetryIntervalMs * (int) Math.pow(2, retries);
-        delay = delay + ThreadLocalRandom.current().nextInt(baseRetryIntervalMs);
-        return Math.min(delay, maxRetryIntervalMs);
+        return retryIntervalMs + ThreadLocalRandom.current().nextInt(2000);
     }
 
     public Table getTable() {
