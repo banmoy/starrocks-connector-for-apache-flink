@@ -33,7 +33,7 @@ public class LoadRequest {
     }
 
     public int nextRetryInterval() {
-        if (numRuns.get() >= maxRetries + 1 || retryIntervalMs <= 0) {
+        if (numRuns.get() > maxRetries + 1 || retryIntervalMs <= 0) {
             return -1;
         }
         return retryIntervalMs + ThreadLocalRandom.current().nextInt(2000);

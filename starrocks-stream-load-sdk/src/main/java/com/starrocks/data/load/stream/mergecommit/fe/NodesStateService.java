@@ -108,6 +108,8 @@ public class NodesStateService implements Closeable {
             }
             nodesInfo.updateNodesInfo(httpWorkerAddresses, brpcWorkerAddresses);
             success = true;
+            LOG.info("Update nodes info, db: {}, table: {}, force: {}, http: {}, brpc: {}",
+                    nodesInfo.tableId.db, nodesInfo.tableId.table, force, httpAddresses, brpcAddresses);
         } catch (Exception e) {
             LOG.error("Failed to get nodes info, db: {}, table: {}, force: {}",
                     nodesInfo.tableId.db, nodesInfo.tableId.table, force, e);
