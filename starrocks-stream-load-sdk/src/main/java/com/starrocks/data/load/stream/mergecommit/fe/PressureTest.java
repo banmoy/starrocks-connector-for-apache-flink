@@ -70,7 +70,8 @@ public class PressureTest {
             client.print();
         }
         System.out.printf("Total: count=%s, avg=%s, max=%s, min=%s\n",
-                count.get(), totalLatency.get() / count.get(), maxLatency.get(), minLatency.get());
+                count.get(), count.get() == 0 ? 0 : totalLatency.get() / count.get(), maxLatency.get(),
+                minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get());
     }
 
     private static class Client {
@@ -93,7 +94,7 @@ public class PressureTest {
             this.service = new FeMetaService(feConfig);
             this.numTables = numTables;
             this.intervalMs = intervalMs;
-            int processors = Math.max(20, Runtime.getRuntime().availableProcessors());
+            int processors = 300;
             this.executorService = Executors.newScheduledThreadPool(
                     processors,
                     r -> {
@@ -118,7 +119,8 @@ public class PressureTest {
 
         public void print() {
             System.out.printf("Client %s: count=%s, avg=%s, max=%s, min=%s\n",
-                    id, count.get(), totalLatency.get() / count.get(), maxLatency.get(), minLatency.get());
+                    id, count.get(), count.get() == 0 ? 0 : totalLatency.get() / count.get(), maxLatency.get(),
+                    minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get());
         }
 
         private void run() {
@@ -128,7 +130,7 @@ public class PressureTest {
             long loop = this.loop.incrementAndGet();
             LabelStateService labelStateService = service.getLabelStateService().get();
             for (int i = 0; i < numTables; i++) {
-                TableId tableId = TableId.of("test", "tbl1");
+                TableId tableId = TableId.of("eid" + i, "tbl");
                 String label = String.format("label-%s-%s", i, loop);
                 labelStateService.getFinalStatus(tableId, label, 0, 100, 600000)
                         .whenCompleteAsync(this::complete, executorService);
@@ -166,8 +168,7 @@ public class PressureTest {
                 }
             }
             if (count.get() % 5000 == 0) {
-                System.out.printf("Client %s: count=%s, avg=%s, max=%s, min=%s\n",
-                        id, count.get(), totalLatency.get() / count.get(), maxLatency.get(), minLatency.get());
+                print();
             }
         }
     }
