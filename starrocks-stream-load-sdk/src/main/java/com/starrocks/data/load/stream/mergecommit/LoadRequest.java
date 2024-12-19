@@ -6,7 +6,6 @@ import com.starrocks.data.load.stream.mergecommit.be.PStreamLoadResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -63,9 +62,7 @@ public class LoadRequest {
         builder.append("chunkId: ").append(chunk.getChunkId())
                 .append(", num runs: ").append(numRuns.get());
         int count = 0;
-        Iterator<RequestRun> iterator = requestRuns.descendingIterator();
-        while (iterator.hasNext()) {
-            RequestRun requestRun = iterator.next();
+        for (RequestRun requestRun : requestRuns) {
             builder.append(", run ").append(count)
                     .append(": {");
             requestRun.stateSummary(builder);
@@ -112,6 +109,10 @@ public class LoadRequest {
         public volatile long callRpcTimeMs = -1;
         public volatile long receiveResponseTimeMs = -1;
         public volatile long labelFinalTimeMs = -1;
+        public volatile long labelRequestCount = -1;
+        public volatile long labelLatencyMs = -1;
+        public volatile long labelHttpCostMs = -1;
+        public volatile long labelPendingCostMs = -1;
         public volatile long finishTime = -1;
 
         public RequestRun(LoadRequest loadRequest, int id, String userLabel) {
@@ -137,6 +138,12 @@ public class LoadRequest {
             builder.append(", callRpc: ").append(callRpcTimeMs > 0 ? callRpcTimeMs - getBrpcAddrTimeMs : -1).append(" ms");
             builder.append(", server: ").append(receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1).append(" ms");
             builder.append(", waitLabel: ").append(labelFinalTimeMs > 0 ? labelFinalTimeMs - receiveResponseTimeMs : -1).append(" ms");
+            if (labelFinalTimeMs > 0) {
+                builder.append(", labelRequestCount: ").append(labelRequestCount);
+                builder.append(", labelLatency: ").append(labelLatencyMs).append(" ms");
+                builder.append(", labelHttpCost: ").append(labelHttpCostMs).append(" ms");
+                builder.append(", labelPendingCost: ").append(labelPendingCostMs).append(" ms");
+            }
             builder.append(", exception: ").append(throwable == null ? "N/A" : throwable.getMessage());
         }
     }

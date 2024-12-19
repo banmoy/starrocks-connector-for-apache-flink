@@ -35,6 +35,7 @@ public class NodesStateService implements Closeable {
     private final Config config;
     private final ObjectMapper objectMapper;
     private final ConcurrentHashMap<TableId, NodesInfo> nodesInfoMap;
+    private final RequestStat requestStat;
 
     public NodesStateService(FeHttpService httpService, ScheduledExecutorService executorService, Config config) {
         this.httpService = httpService;
@@ -46,6 +47,7 @@ public class NodesStateService implements Closeable {
         // filed names in StreamLoadResponseBody are case-insensitive
         objectMapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
         this.nodesInfoMap = new ConcurrentHashMap<>();
+        this.requestStat = new RequestStat(60000, LOG);
     }
 
     public void start() {
@@ -72,7 +74,9 @@ public class NodesStateService implements Closeable {
     private void requestNodesInfo(NodesInfo nodesInfo, boolean force) {
         boolean success = false;
         try {
+            long startNs = System.nanoTime();
             Pair<Integer, String> pair = httpService.getNodes(nodesInfo.tableId.db, nodesInfo.tableId.table, nodesInfo.loadParams);
+            requestStat.addRequest(System.nanoTime() - startNs);
             if (pair.getKey() != 200) {
                 throw new Exception(String.format("Response code not 200, code: %s, response: %s", pair.getKey(), pair.getValue()));
             }

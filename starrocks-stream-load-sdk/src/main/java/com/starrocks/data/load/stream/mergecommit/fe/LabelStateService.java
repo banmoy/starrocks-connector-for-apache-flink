@@ -52,6 +52,7 @@ public class LabelStateService implements Closeable {
     private final ConcurrentHashMap<LabelId, LabelMeta> labelMetas;
     private final ObjectMapper objectMapper;
     private final ReentrantReadWriteLock lock;
+    private final RequestStat requestStat;
     private boolean closed;
 
     public LabelStateService(FeHttpService httpService, ScheduledExecutorService executorService) {
@@ -64,6 +65,7 @@ public class LabelStateService implements Closeable {
         objectMapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
         this.labelMetas = new ConcurrentHashMap<>();
         this.lock = new ReentrantReadWriteLock();
+        this.requestStat = new RequestStat(60000, LOG);
         this.closed = false;
     }
 
@@ -103,7 +105,8 @@ public class LabelStateService implements Closeable {
          LabelMeta labelMeta = labelMetas
               .computeIfAbsent(labelId, key -> new LabelMeta(tableId, label, scheduleDelayMs, scheduleIntervalMs, timeoutMs));
           if (labelMeta.isScheduled.compareAndSet(false, true)) {
-            executorService.schedule(()
+              labelMeta.lastScheduleTimeNs = System.nanoTime();
+              executorService.schedule(()
                                                   -> checkLabelState(labelMeta),
                                               Math.max(0, labelMeta.scheduleDelayMs),
                                               TimeUnit.MILLISECONDS);
@@ -117,10 +120,13 @@ public class LabelStateService implements Closeable {
     }
 
     private void checkLabelState(LabelMeta labelMeta) {
-      labelMeta.numRetries += 1;
-      TransactionStatus status = null;
+        labelMeta.requestCount += 1;
+        long startNs = System.nanoTime();
+        labelMeta.pendingTimeNs += startNs - labelMeta.lastScheduleTimeNs;
+        TransactionStatus status = null;
       try {
             Pair<Integer, String> pair = httpService.getLabelState(labelMeta.tableId.db, labelMeta.label);
+            requestStat.addRequest(System.nanoTime() - startNs);
             if (pair.getKey() != 200) {
                 throw new Exception("Http response code is not 200, code: " + pair.getKey() + ", body: " + pair.getValue());
             }
@@ -140,9 +146,9 @@ public class LabelStateService implements Closeable {
               labelMeta.future.complete(labelMeta);
               long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
               LOG.info(
-                  "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, retries: {}, status: {}",
+                  "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, count: {}, status: {}",
                   labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
-                  costMs, labelMeta.numRetries, status);
+                  costMs, labelMeta.requestCount, status);
               return;
             }
             LOG.debug(
@@ -152,6 +158,8 @@ public class LabelStateService implements Closeable {
         } catch (Exception e) {
             LOG.error("Failed to get label state, db: {}, table: {}, label: {}",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, e);
+        } finally {
+            labelMeta.executeTimeNs += System.nanoTime() - startNs;
         }
 
         LabelMeta newMeta = labelMetas.get(new LabelId(labelMeta.tableId.db, labelMeta.label));
@@ -175,9 +183,10 @@ public class LabelStateService implements Closeable {
             return;
         }
 
+        labelMeta.lastScheduleTimeNs = System.nanoTime();
         executorService.schedule(() -> checkLabelState(labelMeta), labelMeta.scheduleIntervalMs, TimeUnit.MILLISECONDS);
-        LOG.debug("Retry to get label state, db: {}, table: {}, label: {}, status: {}. retries: {}",
-                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, labelMeta.numRetries);
+        LOG.debug("Retry to get label state, db: {}, table: {}, label: {}, status: {}. count: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, labelMeta.requestCount);
     }
 
     private void cleanUselessLabels() {
@@ -240,9 +249,12 @@ public class LabelStateService implements Closeable {
       int timeoutMs;
       CompletableFuture<LabelMeta> future;
       AtomicBoolean isScheduled;
-      long createTimeMs;
-      int numRetries = 0;
-      long finishTimeMs;
+      final long createTimeMs;
+      volatile int requestCount = 0;
+      volatile long executeTimeNs = 0;
+      volatile long pendingTimeNs = 0;
+      volatile long finishTimeMs;
+      volatile long lastScheduleTimeNs;
 
       public TransactionStatus transactionStatus;
 
@@ -258,8 +270,20 @@ public class LabelStateService implements Closeable {
         this.createTimeMs = System.currentTimeMillis();
       }
 
-      public long getLatencyMs() {
+        public int getRequestCount() {
+            return requestCount;
+        }
+
+        public long getLatencyMs() {
           return finishTimeMs - createTimeMs;
+      }
+
+      public long getHttpCostMs() {
+          return executeTimeNs / 1000000;
+      }
+
+      public long getPendingCostMs() {
+          return pendingTimeNs / 1000000;
       }
     }
 

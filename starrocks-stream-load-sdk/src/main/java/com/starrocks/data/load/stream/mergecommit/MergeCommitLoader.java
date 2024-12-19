@@ -219,6 +219,10 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                                  Throwable throwable) {
         TransactionStatus status = labelMeta.transactionStatus;
         requestRun.labelFinalTimeMs = System.currentTimeMillis();
+        requestRun.labelRequestCount = labelMeta.getRequestCount();
+        requestRun.labelLatencyMs = labelMeta.getLatencyMs();
+        requestRun.labelHttpCostMs = labelMeta.getHttpCostMs();
+        requestRun.labelPendingCostMs = labelMeta.getPendingCostMs();
         LoadRequest loadRequest = requestRun.loadRequest;
         if (throwable != null) {
             loadRequest.getTable().loadFinish(requestRun, throwable);
