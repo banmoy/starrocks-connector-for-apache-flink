@@ -257,6 +257,10 @@ public class LabelStateService implements Closeable {
         this.isScheduled = new AtomicBoolean(false);
         this.createTimeMs = System.currentTimeMillis();
       }
+
+      public long getLatencyMs() {
+          return finishTimeMs - createTimeMs;
+      }
     }
 
     public static void main(String[] args) throws Exception {

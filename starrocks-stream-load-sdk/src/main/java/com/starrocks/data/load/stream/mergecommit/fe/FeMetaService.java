@@ -49,7 +49,7 @@ public class FeMetaService extends SharedService {
     private volatile NodesStateService nodesStateService;
     private String currentUuid;
 
-    private FeMetaService(Config config) {
+    public FeMetaService(Config config) {
         this.config = config;
     }
 
