@@ -69,13 +69,13 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
 
             RpcClientOptions clientOptions = new RpcClientOptions();
             clientOptions.setProtocolType(Options.ProtocolType.PROTOCOL_BAIDU_STD_VALUE);
-            clientOptions.setConnectTimeoutMillis(60000);
-            clientOptions.setReadTimeoutMillis(60000);
-            clientOptions.setWriteTimeoutMillis(60000);
+            clientOptions.setConnectTimeoutMillis(properties.getBrpcConnectTimeoutMs());
+            clientOptions.setReadTimeoutMillis(properties.getBrpcReadTimeoutMs());
+            clientOptions.setWriteTimeoutMillis(properties.getBrpcWriteTimeoutMs());
             clientOptions.setChannelType(ChannelType.POOLED_CONNECTION);
             clientOptions.setMaxTotalConnections(properties.getBrpcMaxConnections());
             clientOptions.setMinIdleConnections(properties.getBrpcMinConnections());
-            clientOptions.setMaxTryTimes(3);
+            clientOptions.setMaxTryTimes(properties.getBrpcMaxRetryTimes());
             clientOptions.setLoadBalanceType(LoadBalanceStrategy.LOAD_BALANCE_FAIR);
             clientOptions.setCompressType(Options.CompressType.COMPRESS_TYPE_NONE);
             int nproc = Runtime.getRuntime().availableProcessors();
@@ -90,12 +90,14 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             httpConfig.username = properties.getUsername();
             httpConfig.password = properties.getPassword();
             httpConfig.candidateHosts = Arrays.asList(properties.getLoadUrls());
+            httpConfig.maxConnectionsPerRoute = properties.getHttpMaxConnectionsPerRoute();
+            httpConfig.totalMaxConnections = properties.getHttpTotalMaxConnections();
             NodesStateService.Config nodesConfig = new NodesStateService.Config();
-            nodesConfig.updateIntervalMs = 2000;
+            nodesConfig.updateIntervalMs = properties.getNodeMetaUpdateIntervalMs();
             FeMetaService.Config config = new FeMetaService.Config();
             config.httpServiceConfig = httpConfig;
             config.nodesStateServiceConfig = nodesConfig;
-            config.numExecutors = properties.getHttpMaxConnections();
+            config.numThreads = properties.getHttpThreadNum();
             FeMetaService service1 = FeMetaService.getInstance(config);
             service1.takeRef();
             feMetaService = service1;
@@ -198,7 +200,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
         Table table = request.getTable();
         StreamLoadResponse loadResponse = requestRun.loadResult;
         long leftTimeMs = loadResponse.getBody().getLeftTimeMs() == null ? -1 :
-                loadResponse.getBody().getLeftTimeMs();
+                loadResponse.getBody().getLeftTimeMs() + properties.getCheckLabelInitDelayMs();
         CompletableFuture<LabelStateService.LabelMeta> future =
                 feMetaService.getLabelStateService()
                         .get().getFinalStatus(

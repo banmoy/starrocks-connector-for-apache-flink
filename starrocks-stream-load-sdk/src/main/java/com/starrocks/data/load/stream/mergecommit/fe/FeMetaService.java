@@ -73,7 +73,7 @@ public class FeMetaService extends SharedService {
     protected void init() throws Exception {
         currentUuid = UUID.randomUUID().toString();
         this.executorService = Executors.newScheduledThreadPool(
-                config.numExecutors,
+                config.numThreads,
                 r -> {
                     Thread thread = new Thread(null, r, "FeMetaService-" + currentUuid);
                     thread.setDaemon(true);
@@ -95,7 +95,7 @@ public class FeMetaService extends SharedService {
                 closeService();
             }
         }
-        LOG.info("Init fe meta service, uuid: {}, numExecutors: {}", currentUuid, config.numExecutors);
+        LOG.info("Init fe meta service, uuid: {}, numExecutors: {}", currentUuid, config.numThreads);
     }
 
     @Override
@@ -134,7 +134,7 @@ public class FeMetaService extends SharedService {
     public static class Config {
         public DefaultFeHttpService.Config httpServiceConfig;
         public NodesStateService.Config nodesStateServiceConfig;
-        public int numExecutors = 3;
+        public int numThreads = 3;
     }
 
     public static void main(String[] args) throws Exception {
@@ -149,7 +149,7 @@ public class FeMetaService extends SharedService {
         Config config = new Config();
         config.httpServiceConfig = httpConfig;
         config.nodesStateServiceConfig = nodesConfig;
-        config.numExecutors = 3;
+        config.numThreads = 3;
         FeMetaService service = FeMetaService.getInstance(config);
         service.takeRef();
 

@@ -40,7 +40,7 @@ public class PressureTest {
         FeMetaService.Config feConfig = new FeMetaService.Config();
         feConfig.httpServiceConfig = httpConfig;
         feConfig.nodesStateServiceConfig = nodesConfig;
-        feConfig.numExecutors = numConnectionsPerClient;
+        feConfig.numThreads = numConnectionsPerClient;
 
         List<Client> clients = new ArrayList<>();
         for (int i = 0; i < numClients; i++) {

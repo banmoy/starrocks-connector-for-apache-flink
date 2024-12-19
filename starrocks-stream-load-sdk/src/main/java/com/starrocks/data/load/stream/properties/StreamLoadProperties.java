@@ -89,18 +89,22 @@ public class StreamLoadProperties implements Serializable {
     private final int maxRetries;
     private final int retryIntervalInMs;
     private final Map<String, String> headers;
+    private final int checkLabelInitDelayMs;
     private final int checkLabelIntervalMs;
     private final int checkLabelTimeoutMs;
 
+    private final int brpcConnectTimeoutMs;
+    private final int brpcReadTimeoutMs;
+    private final int brpcWriteTimeoutMs;
+    private final int brpcMaxRetryTimes;
     private final int brpcMaxConnections;
     private final int brpcMinConnections;
     private final int brpcIoThreadNum;
     private final int brpcWorkerThreadNum;
-    private final int httpMaxConnections;
-
-    private final int feMetaExecutorNum;
-    private final int feMetaUpdateIntervalMs;
-
+    private final int httpThreadNum;
+    private final int httpMaxConnectionsPerRoute;
+    private final int httpTotalMaxConnections;
+    private final int nodeMetaUpdateIntervalMs;
 
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
@@ -135,15 +139,21 @@ public class StreamLoadProperties implements Serializable {
         this.retryIntervalInMs = builder.retryIntervalInMs;
 
         this.headers = Collections.unmodifiableMap(builder.headers);
+        this.checkLabelInitDelayMs = builder.checkLabelInitDelayMs;
         this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
         this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
+        this.brpcConnectTimeoutMs = builder.brpcConnectTimeoutMs;
+        this.brpcReadTimeoutMs = builder.brpcReadTimeoutMs;
+        this.brpcWriteTimeoutMs = builder.brpcWriteTimeoutMs;
+        this.brpcMaxRetryTimes = builder.brpcMaxRetryTimes;
         this.brpcMaxConnections = builder.brpcMaxConnections;
         this.brpcMinConnections = builder.brpcMinConnections;
         this.brpcIoThreadNum = builder.brpcIoThreadNum;
         this.brpcWorkerThreadNum = builder.brpcWorkerThreadNum;
-        this.httpMaxConnections = builder.httpMaxConnections;
-        this.feMetaExecutorNum = builder.feMetaExecutorNum;
-        this.feMetaUpdateIntervalMs = builder.feMetaUpdateIntervalMs;
+        this.httpThreadNum = builder.httpThreadNum;
+        this.httpMaxConnectionsPerRoute = builder.httpMaxConnectionsPerRoute;
+        this.httpTotalMaxConnections = builder.httpTotalMaxConnections;
+        this.nodeMetaUpdateIntervalMs = builder.nodeMetaUpdateIntervalMs;
     }
 
     public boolean isEnableTransaction() {
@@ -257,12 +267,32 @@ public class StreamLoadProperties implements Serializable {
         return headers;
     }
 
+    public int getCheckLabelInitDelayMs() {
+        return checkLabelInitDelayMs;
+    }
+
     public int getCheckLabelIntervalMs() {
         return checkLabelIntervalMs;
     }
 
     public int getCheckLabelTimeoutMs() {
         return checkLabelTimeoutMs;
+    }
+
+    public int getBrpcConnectTimeoutMs() {
+        return brpcConnectTimeoutMs;
+    }
+
+    public int getBrpcReadTimeoutMs() {
+        return brpcReadTimeoutMs;
+    }
+
+    public int getBrpcWriteTimeoutMs() {
+        return brpcWriteTimeoutMs;
+    }
+
+    public int getBrpcMaxRetryTimes() {
+        return brpcMaxRetryTimes;
     }
 
     public int getBrpcMaxConnections() {
@@ -281,16 +311,20 @@ public class StreamLoadProperties implements Serializable {
         return brpcWorkerThreadNum;
     }
 
-    public int getHttpMaxConnections() {
-        return httpMaxConnections;
+    public int getHttpThreadNum() {
+        return httpThreadNum;
     }
 
-    public int getFeMetaExecutorNum() {
-        return feMetaExecutorNum;
+    public int getHttpMaxConnectionsPerRoute() {
+        return httpMaxConnectionsPerRoute;
     }
 
-    public int getFeMetaUpdateIntervalMs() {
-        return feMetaUpdateIntervalMs;
+    public int getHttpTotalMaxConnections() {
+        return httpTotalMaxConnections;
+    }
+
+    public int getNodeMetaUpdateIntervalMs() {
+        return nodeMetaUpdateIntervalMs;
     }
 
     public static Builder builder() {
@@ -328,16 +362,21 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
+        private int checkLabelInitDelayMs = 0;
         private int checkLabelIntervalMs = 100;
         private int checkLabelTimeoutMs = 60000;
+        private int brpcConnectTimeoutMs = 60000;
+        private int brpcReadTimeoutMs = 60000;
+        private int brpcWriteTimeoutMs = 60000;
+        private int brpcMaxRetryTimes = 1;
         private int brpcMaxConnections = 5;
         private int brpcMinConnections = 2;
         private int brpcIoThreadNum = -1;
         private int brpcWorkerThreadNum = -1;
-        private int httpMaxConnections = 3;
-
-        private int feMetaExecutorNum = 2;
-        private int feMetaUpdateIntervalMs = 60000;
+        private int httpThreadNum = 3;
+        private int httpMaxConnectionsPerRoute = 3;
+        private int httpTotalMaxConnections = 30;
+        private int nodeMetaUpdateIntervalMs = 2000;
 
         public Builder jdbcUrl(String jdbcUrl) {
             this.jdbcUrl = jdbcUrl;
@@ -501,6 +540,11 @@ public class StreamLoadProperties implements Serializable {
             return this;
         }
 
+        public Builder setCheckLabelInitDelayMs(int checkLabelInitDelayMs) {
+            this.checkLabelInitDelayMs = checkLabelInitDelayMs;
+            return this;
+        }
+
         public Builder setCheckLabelIntervalMs(int checkLabelIntervalMs) {
             this.checkLabelIntervalMs = checkLabelIntervalMs;
             return this;
@@ -508,6 +552,26 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
             this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcConnectTimeoutMs(int brpcConnectTimeoutMs) {
+            this.brpcConnectTimeoutMs = brpcConnectTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcReadTimeoutMs(int brpcReadTimeoutMs) {
+            this.brpcReadTimeoutMs = brpcReadTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcWriteTimeoutMs(int brpcWriteTimeoutMs) {
+            this.brpcWriteTimeoutMs = brpcWriteTimeoutMs;
+            return this;
+        }
+
+        public Builder setBrpcMaxRetryTimes(int brpcMaxRetryTimes) {
+            this.brpcMaxRetryTimes = brpcMaxRetryTimes;
             return this;
         }
 
@@ -531,18 +595,23 @@ public class StreamLoadProperties implements Serializable {
             return this;
         }
 
-        public Builder setHttpMaxConnections(int httpMaxConnections) {
-            this.httpMaxConnections = httpMaxConnections;
+        public Builder setHttpThreadNum(int httpThreadNum) {
+            this.httpThreadNum = httpThreadNum;
             return this;
         }
 
-        public Builder setFeMetaExecutorNum(int num) {
-            this.feMetaExecutorNum = num;
+        public Builder setHttpMaxConnectionsPerRoute(int httpMaxConnectionsPerRoute) {
+            this.httpMaxConnectionsPerRoute = httpMaxConnectionsPerRoute;
             return this;
         }
 
-        public Builder setFeMetaUpdateIntervalMs(int intervalMs) {
-            this.feMetaUpdateIntervalMs = intervalMs;
+        public Builder setHttpTotalMaxConnections(int httpTotalMaxConnections) {
+            this.httpTotalMaxConnections = httpTotalMaxConnections;
+            return this;
+        }
+
+       public Builder setNodeMetaUpdateIntervalMs(int nodeMetaUpdateIntervalMs) {
+            this.nodeMetaUpdateIntervalMs = nodeMetaUpdateIntervalMs;
             return this;
         }
 
