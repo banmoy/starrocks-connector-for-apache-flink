@@ -362,8 +362,8 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
-        private int checkLabelInitDelayMs = 0;
-        private int checkLabelIntervalMs = 100;
+        private int checkLabelInitDelayMs = 300;
+        private int checkLabelIntervalMs = 200;
         private int checkLabelTimeoutMs = 60000;
         private int brpcConnectTimeoutMs = 60000;
         private int brpcReadTimeoutMs = 60000;
