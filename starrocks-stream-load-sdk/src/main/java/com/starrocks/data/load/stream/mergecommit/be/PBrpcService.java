@@ -4,6 +4,6 @@ import com.baidu.brpc.protocol.BrpcMeta;
 
 public interface PBrpcService {
 
-    @BrpcMeta(serviceName = "PBackendService", methodName = "stream_load")
+    @BrpcMeta(serviceName = "PInternalService", methodName = "stream_load")
     PStreamLoadResponse streamLoad(PStreamLoadRequest request);
 }
