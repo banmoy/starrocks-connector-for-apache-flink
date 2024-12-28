@@ -101,6 +101,13 @@ public class StreamLoadResponse implements Serializable {
         private Long readDataTimeMs;
         private Long writeDataTimeMs;
         private Long commitAndPublishTimeMs;
+
+        // =================== merge commit ===================
+        private long pendingTimeMs;
+        private long waitPlanTimeMs;
+        private long waitFinishTimeMs;
+        private long leftMergeTimeMs;
+        // the legacy of leftMergeTimeMs
         private Long leftTimeMs;
 
         public Long getNumberTotalRows() {
@@ -244,7 +251,7 @@ public class StreamLoadResponse implements Serializable {
         }
 
         public Long getLeftTimeMs() {
-            return leftTimeMs;
+            return leftTimeMs != null ? leftTimeMs : leftMergeTimeMs;
         }
     }
 }
