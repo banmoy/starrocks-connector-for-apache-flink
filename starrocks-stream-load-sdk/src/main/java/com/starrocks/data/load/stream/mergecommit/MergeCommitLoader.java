@@ -211,14 +211,14 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                                 properties.getCheckLabelTimeoutMs())
                         .whenCompleteAsync(
                                 (labelMeta, throwable)
-                                        -> dealLabelStatus(requestRun, labelMeta, throwable),
+                                        -> completeLabel(requestRun, labelMeta, throwable),
                                 executorService);
         requestRun.labelFuture = future;
     }
 
-    private void dealLabelStatus(LoadRequest.RequestRun requestRun,
-                                 LabelStateService.LabelMeta labelMeta,
-                                 Throwable throwable) {
+    private void completeLabel(LoadRequest.RequestRun requestRun,
+                               LabelStateService.LabelMeta labelMeta,
+                               Throwable throwable) {
         TransactionStatus status = labelMeta.transactionStatus;
         requestRun.labelFinalTimeMs = System.currentTimeMillis();
         requestRun.labelRequestCount = labelMeta.getRequestCount();
@@ -235,8 +235,8 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             loadRequest.getTable().loadFinish(
                     requestRun,
                     new RuntimeException(String.format(
-                            "Label %s does not in final status, current status: %s",
-                            requestRun.loadResult.getBody().getLabel(), status)));
+                            "Label %s does not in final status, current status: %s, reason: %s",
+                            requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason)));
         } else {
             loadRequest.getTable().loadFinish(requestRun, null);
         }

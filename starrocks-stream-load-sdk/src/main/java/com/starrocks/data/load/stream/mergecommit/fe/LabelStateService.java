@@ -143,18 +143,18 @@ public class LabelStateService implements Closeable {
             if (TransactionStatus.isFinalStatus(status)) {
                 labelMeta.finishTimeMs = System.currentTimeMillis();
               labelMeta.transactionStatus = status;
+              labelMeta.reason = response.reason;
               labelMeta.future.complete(labelMeta);
               long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
               LOG.info(
-                  "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, count: {}, status: {}",
-                  labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
-                  costMs, labelMeta.requestCount, status);
+                  "Get final label state, db: {}, table: {}, label: {}, cost: {}ms, count: {}, status: {}, reason: {}",
+                  labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, costMs,
+                  labelMeta.requestCount, status, response.reason);
               return;
             }
             LOG.debug(
-                "Label is not in final status, db: {}, table: {}, label: {}, status: {}",
-                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label,
-                status);
+                "Label is not in final status, db: {}, table: {}, label: {}, status: {}, reason: {}",
+                labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, status, response.reason);
         } catch (Exception e) {
             LOG.error("Failed to get label state, db: {}, table: {}, label: {}",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, e);
@@ -208,6 +208,7 @@ public class LabelStateService implements Closeable {
         public String message;
         public String msg;
         public String state;
+        public String reason;
     }
 
     public static class LabelId {
@@ -256,7 +257,8 @@ public class LabelStateService implements Closeable {
       volatile long finishTimeMs;
       volatile long lastScheduleTimeNs;
 
-      public TransactionStatus transactionStatus;
+      public volatile TransactionStatus transactionStatus;
+      public volatile String reason;
 
       LabelMeta(TableId tableId, String label, int scheduleDelayMs,
                 int scheduleIntervalMs, int timeoutMs) {
