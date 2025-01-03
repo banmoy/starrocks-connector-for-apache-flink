@@ -103,10 +103,10 @@ public class StreamLoadResponse implements Serializable {
         private Long commitAndPublishTimeMs;
 
         // =================== merge commit ===================
-        private long pendingTimeMs;
-        private long waitPlanTimeMs;
-        private long waitFinishTimeMs;
-        private long leftMergeTimeMs;
+        private Long pendingTimeMs;
+        private Long waitPlanTimeMs;
+        private Long waitFinishTimeMs;
+        private Long leftMergeTimeMs;
         // the legacy of leftMergeTimeMs
         private Long leftTimeMs;
 
@@ -254,35 +254,35 @@ public class StreamLoadResponse implements Serializable {
             return leftTimeMs != null ? leftTimeMs : leftMergeTimeMs;
         }
 
-        public long getPendingTimeMs() {
+        public Long getPendingTimeMs() {
             return pendingTimeMs;
         }
 
-        public void setPendingTimeMs(long pendingTimeMs) {
+        public void setPendingTimeMs(Long pendingTimeMs) {
             this.pendingTimeMs = pendingTimeMs;
         }
 
-        public long getWaitPlanTimeMs() {
+        public Long getWaitPlanTimeMs() {
             return waitPlanTimeMs;
         }
 
-        public void setWaitPlanTimeMs(long waitPlanTimeMs) {
+        public void setWaitPlanTimeMs(Long waitPlanTimeMs) {
             this.waitPlanTimeMs = waitPlanTimeMs;
         }
 
-        public long getWaitFinishTimeMs() {
+        public Long getWaitFinishTimeMs() {
             return waitFinishTimeMs;
         }
 
-        public void setWaitFinishTimeMs(long waitFinishTimeMs) {
+        public void setWaitFinishTimeMs(Long waitFinishTimeMs) {
             this.waitFinishTimeMs = waitFinishTimeMs;
         }
 
-        public long getLeftMergeTimeMs() {
+        public Long getLeftMergeTimeMs() {
             return leftMergeTimeMs;
         }
 
-        public void setLeftMergeTimeMs(long leftMergeTimeMs) {
+        public void setLeftMergeTimeMs(Long leftMergeTimeMs) {
             this.leftMergeTimeMs = leftMergeTimeMs;
         }
     }

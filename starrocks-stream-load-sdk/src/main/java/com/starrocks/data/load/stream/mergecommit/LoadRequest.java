@@ -137,13 +137,14 @@ public class LoadRequest {
             builder.append(", getWorkerAddr: ").append(getBrpcAddrTimeMs > 0 ? getBrpcAddrTimeMs - compressTimeMs : -1).append(" ms");
             builder.append(", callRpc: ").append(callRpcTimeMs > 0 ? callRpcTimeMs - getBrpcAddrTimeMs : -1).append(" ms");
             builder.append(", server: ").append(receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1).append(" ms");
-            if (receiveResponseTimeMs > 0) {
-                builder.append(", readData: ").append(loadResult.getBody().getReadDataTimeMs()).append(" ms");
-                builder.append(", serverPending: ").append(loadResult.getBody().getPendingTimeMs()).append(" ms");
-                builder.append(", waitPlan: ").append(loadResult.getBody().getWaitPlanTimeMs()).append(" ms");
-                builder.append(", writeData: ").append(loadResult.getBody().getWriteDataTimeMs()).append(" ms");
-                builder.append(", waitFinish: ").append(loadResult.getBody().getWaitFinishTimeMs()).append(" ms");
-                builder.append(", leftMerge: ").append(loadResult.getBody().getLeftMergeTimeMs()).append(" ms");
+            if (loadResult != null && loadResult.getBody() != null) {
+                StreamLoadResponse.StreamLoadResponseBody body = loadResult.getBody();
+                builder.append(", readData: ").append(body.getReadDataTimeMs() != null ? body.getReadDataTimeMs() : -1).append(" ms");
+                builder.append(", serverPending: ").append(body.getPendingTimeMs() != null ? body.getPendingTimeMs() : -1).append(" ms");
+                builder.append(", waitPlan: ").append(body.getWaitPlanTimeMs() != null ? body.getWaitPlanTimeMs() : -1).append(" ms");
+                builder.append(", writeData: ").append(body.getWriteDataTimeMs() != null ? body.getWriteDataTimeMs() : -1).append(" ms");
+                builder.append(", waitFinish: ").append(body.getWaitFinishTimeMs() != null ? body.getWaitFinishTimeMs() : -1).append(" ms");
+                builder.append(", leftMerge: ").append(body.getLeftMergeTimeMs() != null ? body.getLeftMergeTimeMs() : -1).append(" ms");
             }
             builder.append(", waitLabel: ").append(labelFinalTimeMs > 0 ? labelFinalTimeMs - receiveResponseTimeMs : -1).append(" ms");
             if (labelFinalTimeMs > 0) {

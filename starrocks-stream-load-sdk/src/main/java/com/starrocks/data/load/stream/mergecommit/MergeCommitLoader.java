@@ -298,6 +298,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                         completeSyncMode(requestRun);
                     }
                 } else {
+                    // TODO check label again
                     String errorMsg = String.format(
                             "Load rpc failed, db: %s, table: %s, user label: %s, worker: %s, "
                                     + "response: %s",
