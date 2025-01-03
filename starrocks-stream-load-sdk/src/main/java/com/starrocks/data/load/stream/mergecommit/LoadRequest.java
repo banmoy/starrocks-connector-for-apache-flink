@@ -137,6 +137,14 @@ public class LoadRequest {
             builder.append(", getWorkerAddr: ").append(getBrpcAddrTimeMs > 0 ? getBrpcAddrTimeMs - compressTimeMs : -1).append(" ms");
             builder.append(", callRpc: ").append(callRpcTimeMs > 0 ? callRpcTimeMs - getBrpcAddrTimeMs : -1).append(" ms");
             builder.append(", server: ").append(receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1).append(" ms");
+            if (receiveResponseTimeMs > 0) {
+                builder.append(", readData: ").append(loadResult.getBody().getReadDataTimeMs()).append(" ms");
+                builder.append(", serverPending: ").append(loadResult.getBody().getPendingTimeMs()).append(" ms");
+                builder.append(", waitPlan: ").append(loadResult.getBody().getWaitPlanTimeMs()).append(" ms");
+                builder.append(", writeData: ").append(loadResult.getBody().getWriteDataTimeMs()).append(" ms");
+                builder.append(", waitFinish: ").append(loadResult.getBody().getWaitFinishTimeMs()).append(" ms");
+                builder.append(", leftMerge: ").append(loadResult.getBody().getLeftMergeTimeMs()).append(" ms");
+            }
             builder.append(", waitLabel: ").append(labelFinalTimeMs > 0 ? labelFinalTimeMs - receiveResponseTimeMs : -1).append(" ms");
             if (labelFinalTimeMs > 0) {
                 builder.append(", labelRequestCount: ").append(labelRequestCount);

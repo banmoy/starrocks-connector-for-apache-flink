@@ -253,5 +253,37 @@ public class StreamLoadResponse implements Serializable {
         public Long getLeftTimeMs() {
             return leftTimeMs != null ? leftTimeMs : leftMergeTimeMs;
         }
+
+        public long getPendingTimeMs() {
+            return pendingTimeMs;
+        }
+
+        public void setPendingTimeMs(long pendingTimeMs) {
+            this.pendingTimeMs = pendingTimeMs;
+        }
+
+        public long getWaitPlanTimeMs() {
+            return waitPlanTimeMs;
+        }
+
+        public void setWaitPlanTimeMs(long waitPlanTimeMs) {
+            this.waitPlanTimeMs = waitPlanTimeMs;
+        }
+
+        public long getWaitFinishTimeMs() {
+            return waitFinishTimeMs;
+        }
+
+        public void setWaitFinishTimeMs(long waitFinishTimeMs) {
+            this.waitFinishTimeMs = waitFinishTimeMs;
+        }
+
+        public long getLeftMergeTimeMs() {
+            return leftMergeTimeMs;
+        }
+
+        public void setLeftMergeTimeMs(long leftMergeTimeMs) {
+            this.leftMergeTimeMs = leftMergeTimeMs;
+        }
     }
 }

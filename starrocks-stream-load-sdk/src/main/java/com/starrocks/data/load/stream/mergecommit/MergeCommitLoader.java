@@ -185,7 +185,7 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
             brpcService.streamLoad(workerAddress, request, callback);
             requestRun.callRpcTimeMs = System.currentTimeMillis();
             requestRun.state = LoadRequest.State.WAITING_RESPONSE;
-            LOG.info(
+            LOG.debug(
                     "Send load request, db: {}, table: {}, user label: {}, chunkId: {}, worker: {}",
                     database, tableName, requestRun.userLabel, loadRequest.getChunk().getChunkId(), workerAddress.getHost());
         } catch (Throwable e) {
@@ -211,14 +211,14 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                                 properties.getCheckLabelTimeoutMs())
                         .whenCompleteAsync(
                                 (labelMeta, throwable)
-                                        -> completeLabel(requestRun, labelMeta, throwable),
+                                        -> completeAsyncMode(requestRun, labelMeta, throwable),
                                 executorService);
         requestRun.labelFuture = future;
     }
 
-    private void completeLabel(LoadRequest.RequestRun requestRun,
-                               LabelStateService.LabelMeta labelMeta,
-                               Throwable throwable) {
+    private void completeAsyncMode(LoadRequest.RequestRun requestRun,
+                                   LabelStateService.LabelMeta labelMeta,
+                                   Throwable throwable) {
         TransactionStatus status = labelMeta.transactionStatus;
         requestRun.labelFinalTimeMs = System.currentTimeMillis();
         requestRun.labelRequestCount = labelMeta.getRequestCount();
@@ -240,6 +240,16 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
         } else {
             loadRequest.getTable().loadFinish(requestRun, null);
         }
+    }
+
+    private void completeSyncMode(LoadRequest.RequestRun requestRun) {
+        requestRun.labelFinalTimeMs = System.currentTimeMillis();
+        requestRun.labelRequestCount = 0;
+        requestRun.labelLatencyMs = 0;
+        requestRun.labelHttpCostMs = 0;
+        requestRun.labelPendingCostMs = 0;
+        LoadRequest loadRequest = requestRun.loadRequest;
+        loadRequest.getTable().loadFinish(requestRun, null);
     }
 
     private class LoadRpcCallback implements RpcCallback<PStreamLoadResponse> {
@@ -279,10 +289,14 @@ public class MergeCommitLoader implements StreamLoader, Serializable {
                                     db, table, requestRun.userLabel, requestRun.workerAddress.getHost(), response));
                     }
                     requestRun.state = LoadRequest.State.WAITING_LABEL;
-                    waitLabelAsync(requestRun);
-                    LOG.info(
+                    LOG.debug(
                             "Load rpc success, db: {}, table: {}, user label: {}, chunkId: {}, txn label: {}",
                             db, table, requestRun.userLabel, request.getChunk().getChunkId(), streamLoadBody.getLabel());
+                    if (request.getTable().isMergeCommitAsync()) {
+                        waitLabelAsync(requestRun);
+                    } else {
+                        completeSyncMode(requestRun);
+                    }
                 } else {
                     String errorMsg = String.format(
                             "Load rpc failed, db: %s, table: %s, user label: %s, worker: %s, "

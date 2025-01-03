@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -28,6 +29,7 @@ public class BackendBrpcService extends SharedService {
 
     private final BrpcConfig config;
     private final ConcurrentHashMap<WorkerAddress, BrpcEndpoint> endpointMap;
+    private volatile String currentUuid;
 
     public BackendBrpcService(BrpcConfig config) {
         this.config = config;
@@ -52,14 +54,15 @@ public class BackendBrpcService extends SharedService {
 
     @Override
     protected void init() {
-        LOG.info("Init brpc client manager");
+        currentUuid = UUID.randomUUID().toString();
+        LOG.info("Init brpc client manager, uuid: {}", currentUuid);
     }
 
     @Override
     protected void reset() {
         endpointMap.values().forEach(endpoint -> endpoint.client.stop());
         endpointMap.clear();
-        LOG.info("Reset brpc client manager");
+        LOG.info("Reset brpc client manager, uuid: {}", currentUuid);
     }
 
     public Future<PStreamLoadResponse> streamLoad(WorkerAddress backend, PStreamLoadRequest request, RpcCallback<PStreamLoadResponse> callback) {

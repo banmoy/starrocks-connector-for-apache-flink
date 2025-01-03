@@ -47,7 +47,7 @@ public class FeMetaService extends SharedService {
     private DefaultFeHttpService httpService;
     private volatile LabelStateService labelStateService;
     private volatile NodesStateService nodesStateService;
-    private String currentUuid;
+    private volatile String currentUuid;
 
     public FeMetaService(Config config) {
         this.config = config;

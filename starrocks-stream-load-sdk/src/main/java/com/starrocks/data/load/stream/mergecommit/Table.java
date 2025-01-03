@@ -59,6 +59,7 @@ public class Table {
     private volatile ScheduledFuture<?> timer;
     private final AtomicReference<Throwable> tableThrowable;
     private final Map<String, String> loadParameters;
+    private final boolean mergeCommitAsync;
 
     public Table(
             String database,
@@ -91,6 +92,8 @@ public class Table {
         this.flushCondition = lock.newCondition();
         this.tableThrowable = new AtomicReference<>();
         this.loadParameters = LoadParameters.getParameters(properties);
+        this.mergeCommitAsync = loadParameters.containsKey(LoadParameters.HTTP_BATCH_WRITE_ASYNC)
+                && Boolean.parseBoolean(loadParameters.get(LoadParameters.HTTP_BATCH_WRITE_ASYNC));
     }
 
     public String getDatabase() {
@@ -107,6 +110,10 @@ public class Table {
 
     public Map<String, String> getLoadParameters() {
         return loadParameters;
+    }
+
+    public boolean isMergeCommitAsync() {
+        return mergeCommitAsync;
     }
 
     public int write(byte[] row) {
