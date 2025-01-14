@@ -1,5 +1,7 @@
 package com.starrocks.data.load.stream.mergecommit;
 
+import com.starrocks.data.load.stream.StreamLoadDataFormat;
+import com.starrocks.data.load.stream.compress.LZ4FrameCompressionCodec;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 
 import java.util.Arrays;
@@ -66,6 +68,23 @@ public class LoadParameters {
         for (String name : HTTP_HEADER_LIST) {
             Optional<String> value = properties.getProperty(name);
             value.ifPresent(s -> parameters.put(name, s));
+        }
+
+        Optional<String> compressionType = properties.getProperty("compression");
+        // To enable csv compression, at the connector side, the user need to set two properties:
+        // "format = csv" and "compression = <compression type>". It needs to be converted to one
+        // header "format = <compression type>" which matches the server usage. In the future, the
+        // server will be refactored to configure the compression type in the same way as the connector,
+        // and this conversion will be removed.
+        if (properties.getDataFormat() instanceof StreamLoadDataFormat.CSVFormat && compressionType.isPresent()) {
+            // You can see the format name for different compression types here
+            // https://github.com/StarRocks/starrocks/blob/main/be/src/http/action/stream_load.cpp#L96
+            if (LZ4FrameCompressionCodec.NAME.equalsIgnoreCase(compressionType.get())) {
+                parameters.put("format", "lz4");
+            } else {
+                throw new UnsupportedOperationException(
+                        "CSV format does not support compression type: " + compressionType.get());
+            }
         }
         return parameters;
     }
