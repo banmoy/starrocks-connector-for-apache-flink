@@ -22,6 +22,7 @@ public class LoadRequest {
     private final int retryIntervalMs;
     private final AtomicInteger numRuns;
     private final ConcurrentLinkedDeque<RequestRun> requestRuns = new ConcurrentLinkedDeque<>();
+    private final long startTimeMs;
 
     public LoadRequest(Table table, Chunk chunk, int maxRetries, int retryIntervalMs) {
         this.table = table;
@@ -29,6 +30,7 @@ public class LoadRequest {
         this.maxRetries = maxRetries;
         this.retryIntervalMs = retryIntervalMs;
         this.numRuns = new AtomicInteger(0);
+        this.startTimeMs = System.currentTimeMillis();
     }
 
     public int nextRetryInterval() {
@@ -56,6 +58,14 @@ public class LoadRequest {
 
     public int getNumRuns() {
         return numRuns.get();
+    }
+
+    public RequestRun getLastRun() {
+        return requestRuns.getLast();
+    }
+
+    public long getTotalTimeMs() {
+        return System.currentTimeMillis() - startTimeMs;
     }
 
     public void stateSummary(StringBuilder builder) {
@@ -122,6 +132,10 @@ public class LoadRequest {
             this.createTimeMs = System.currentTimeMillis();
         }
 
+        public long getServerTimeMs() {
+            return receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1;
+        }
+
         public void stateSummary(StringBuilder builder) {
             builder.append("id: ").append(id)
                     .append(", state: ").append(state)
@@ -136,7 +150,7 @@ public class LoadRequest {
             builder.append(", compress: ").append(compressTimeMs > 0 ? compressTimeMs - executeTimeMs : -1).append(" ms");
             builder.append(", getWorkerAddr: ").append(getBrpcAddrTimeMs > 0 ? getBrpcAddrTimeMs - compressTimeMs : -1).append(" ms");
             builder.append(", callRpc: ").append(callRpcTimeMs > 0 ? callRpcTimeMs - getBrpcAddrTimeMs : -1).append(" ms");
-            builder.append(", server: ").append(receiveResponseTimeMs > 0 ? receiveResponseTimeMs - callRpcTimeMs : -1).append(" ms");
+            builder.append(", server: ").append(getServerTimeMs()).append(" ms");
             if (loadResult != null && loadResult.getBody() != null) {
                 StreamLoadResponse.StreamLoadResponseBody body = loadResult.getBody();
                 builder.append(", readData: ").append(body.getReadDataTimeMs() != null ? body.getReadDataTimeMs() : -1).append(" ms");

@@ -224,7 +224,7 @@ public class Table {
     private void flushChunk(Chunk chunk, FlushChunkReason reason) {
         LoadRequest request = new LoadRequest(this, chunk, maxRetries, retryIntervalInMs);
         inflightLoadRequests.put(chunk.getChunkId(), request);
-        manager.onLoadStart(this, chunk.rowBytes());
+        manager.onLoadStart(this, chunk.rowBytes(), chunk.numRows());
         LoadRequest.RequestRun requestRun = request.newRun();
         streamLoader.sendLoad(requestRun, 0);
         LOG.info("Flush chunk, db: {}, table: {}, chunkId: {}, rows: {}, bytes: {}, reason: {}",
@@ -250,14 +250,14 @@ public class Table {
             }
 
             tableThrowable.compareAndSet(null, throwable);
-            manager.onLoadFailure(this, throwable);
+            manager.onLoadFailure(this, request, throwable);
         } else {
             Chunk chunk = request.getChunk();
             cacheBytes.addAndGet(-chunk.rowBytes());
             cacheRows.addAndGet(-chunk.numRows());
             requestRun.loadResult.setFlushBytes(chunk.rowBytes());
             requestRun.loadResult.setFlushRows(chunk.numRows());
-            manager.onLoadSuccess(this, requestRun.loadResult);
+            manager.onLoadSuccess(this, request);
         }
         request.logRequestTrace();
         lock.lock();

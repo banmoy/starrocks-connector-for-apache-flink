@@ -52,6 +52,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
     private final AtomicReference<Throwable> exception;
     private transient Thread cacheMonitorThread;
     private transient AtomicBoolean closed;
+    private transient MetricListener metricListener;
 
     public MergeCommitManager(StreamLoadProperties properties) {
         this.properties = properties;
@@ -67,34 +68,44 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
     }
 
     @Override
+    public void setMetricListener(MetricListener metricListener) {
+        this.metricListener = metricListener;
+    }
+
+    @Override
     public void init() {
+        this.metricListener = metricListener == null ? new EmptyMetricListener() : metricListener;
         this.closed = new AtomicBoolean(false);
         this.streamLoader.start(properties, this);
         this.cacheMonitorThread = new Thread(this::monitorCache, "starrocks-cache-monitor");
         this.cacheMonitorThread.setDaemon(true);
         this.cacheMonitorThread.start();
-
         LOG.info("Init merge commit manager, {}", EnvUtils.getGitInformation());
     }
 
     @Override
     public void write(String uniqueKey, String database, String tableName, String... rows) {
         Table table = getTable(database, tableName);
+        int totalBytes = 0;
         for (String row : rows) {
             checkException();
             int bytes = table.write(row.getBytes(StandardCharsets.UTF_8));
+            totalBytes += bytes;
             currentCacheBytes.addAndGet(bytes);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Write record, database {}, table {}, row {}", database, tableName, row);
             }
             checkCacheFull();
         }
+        metricListener.onWrite(rows.length, totalBytes);
+        metricListener.onCacheChange(maxWriteBlockCacheBytes, currentCacheBytes.get());
     }
 
     private void checkCacheFull() {
         if (currentCacheBytes.get() < maxWriteBlockCacheBytes) {
             return;
         }
+        long startTime = System.currentTimeMillis();
         lock.lock();
         try {
             int idx = 0;
@@ -110,6 +121,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
         } finally {
             lock.unlock();
         }
+        metricListener.onCacheFull(System.currentTimeMillis() - startTime);
     }
 
     private void monitorCache() {
@@ -150,27 +162,41 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
         }
     }
 
-    public void onLoadStart(Table table, long dataSize) {
+    public void onLoadStart(Table table, long dataSize, int numRows) {
         inflightBytes.addAndGet(dataSize);
+        metricListener.onLoadStart(dataSize, numRows);
         LOG.debug("Receive load start, db: {}, table: {}, dataSize: {}, inflightBytes: {}",
                 table.getDatabase(), table.getTable(), dataSize, inflightBytes.get());
     }
 
-    public void onLoadSuccess(Table table, StreamLoadResponse response) {
+    public void onLoadSuccess(Table table, LoadRequest loadRequest) {
+        LoadRequest.RequestRun requestRun = loadRequest.getLastRun();
+        StreamLoadResponse response = requestRun.loadResult;
         long cacheByteBeforeFlush = currentCacheBytes.getAndAdd(-response.getFlushBytes());
         inflightBytes.addAndGet(-response.getFlushBytes());
-        LOG.debug("Receive load success, db: {}, table: {}, cacheByteBeforeFlush: {}, currentCacheBytes: {}",
-                table.getDatabase(), table.getTable(), cacheByteBeforeFlush, currentCacheBytes.get());
         lock.lock();
         try {
             writable.signal();
         } finally {
             lock.unlock();
         }
+        metricListener.onCacheChange(maxWriteBlockCacheBytes, currentCacheBytes.get());
+        metricListener.onLoadSuccess(loadRequest.getChunk().rowBytes(), loadRequest.getChunk().numRows(),
+                loadRequest.getNumRuns() - 1, loadRequest.getTotalTimeMs(), requestRun.getServerTimeMs());
+        LOG.debug("Receive load success, db: {}, table: {}, cacheByteBeforeFlush: {}, currentCacheBytes: {}",
+                table.getDatabase(), table.getTable(), cacheByteBeforeFlush, currentCacheBytes.get());
     }
 
-    public void onLoadFailure(Table table, Throwable throwable) {
+    public void onLoadFailure(Table table, LoadRequest request, Throwable throwable) {
         this.exception.compareAndSet(null, throwable);
+        metricListener.onLoadFailure(request.getChunk().rowBytes(), request.getChunk().numRows(),
+                request.getNumRuns() - 1, request.getTotalTimeMs());
+        lock.lock();
+        try {
+            writable.signal();
+        } finally {
+            lock.unlock();
+        }
         LOG.debug("Receive load failure, db: {}, table: {}", table.getDatabase(), table.getTable(), throwable);
     }
 
@@ -213,6 +239,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
             maxWaitTime = Math.max(maxWaitTime, duration);
             minWaitTime = Math.min(minWaitTime, duration);
         }
+        metricListener.onFlush(tables.size(), totalTriggerTime + totalWaitTime);
         LOG.info("Flush {} tables, total cost: {} ms, trigger cost: {} ms, wait cost: {} ms, " +
             "min trigger cost: {} ms, max trigger cost: {} ms, min wait cost: {} ms, max wait cost: {} ms",
                 tables.size(), totalTriggerTime + totalWaitTime, totalTriggerTime, totalWaitTime, minTriggerTime,

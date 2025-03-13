@@ -26,6 +26,7 @@ import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.StreamLoadSnapshot;
 import com.starrocks.data.load.stream.StreamLoader;
 import com.starrocks.data.load.stream.mergecommit.MergeCommitManager;
+import com.starrocks.data.load.stream.mergecommit.MetricListener;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 
 import java.io.Serializable;
@@ -104,5 +105,10 @@ public class StreamLoadManagerV2 implements StreamLoadManager, Serializable {
     @Override
     public StreamLoader getStreamLoader() {
         return manager.getStreamLoader();
+    }
+
+    @Override
+    public void setMetricListener(MetricListener metricListener) {
+        manager.setMetricListener(metricListener);
     }
 }

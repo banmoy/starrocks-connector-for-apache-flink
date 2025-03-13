@@ -20,6 +20,7 @@
 
 package com.starrocks.data.load.stream;
 
+import com.starrocks.data.load.stream.mergecommit.MetricListener;
 import com.starrocks.data.load.stream.v2.StreamLoadListener;
 
 public interface StreamLoadManager {
@@ -47,4 +48,6 @@ public interface StreamLoadManager {
     default void setLabelGeneratorFactory(LabelGeneratorFactory labelGeneratorFactory) {
         // ignore
     }
+
+    default void setMetricListener(MetricListener metricListener) {}
 }
