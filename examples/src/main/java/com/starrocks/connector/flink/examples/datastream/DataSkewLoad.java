@@ -68,11 +68,13 @@ public class DataSkewLoad {
         rateLimiter.setRate(rate);
         int sourceParallel = params.getInt("srcParallel", 2);
         int sinkParallel = params.getInt("sinkParallel", 2);
+        String flushIntervalMs = params.get("flushIntervalMs", "1000");
+        int strLen = params.getInt("strLen", 7);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.getCheckpointConfig().disableCheckpointing();
 
-        DataStream<String> source = env.addSource(new DataSource(companyIds, format, rateLimiter, batch))
+        DataStream<String> source = env.addSource(new DataSource(companyIds, format, strLen, rateLimiter, batch))
                 .setParallelism(sourceParallel).disableChaining();
         StarRocksSinkOptions options = StarRocksSinkOptions.builder()
                 .withProperty("jdbc-url", jdbcUrl)
@@ -81,7 +83,7 @@ public class DataSkewLoad {
                 .withProperty("table-name", tableName)
                 .withProperty("username", "root")
                 .withProperty("password", "")
-                .withProperty("sink.buffer-flush.interval-ms", "1000")
+                .withProperty("sink.buffer-flush.interval-ms", flushIntervalMs)
                 .withProperty("sink.buffer-flush.max-bytes", "188743680")
                 .withProperty("sink.properties.format", format)
                 .withProperty("sink.properties.column_separator", CSV_DELIMITER)
@@ -96,13 +98,15 @@ public class DataSkewLoad {
 
         private final String[] companyIds;
         private final String format;
+        private final int strLen;
         private final FlinkConnectorRateLimiter rateLimiter;
         private final int batchSize;
         private transient boolean cancel;
 
-        public DataSource(String[] companyIds, String format, FlinkConnectorRateLimiter rateLimiter, int batchSize) {
+        public DataSource(String[] companyIds, String format, int strLen, FlinkConnectorRateLimiter rateLimiter, int batchSize) {
             this.companyIds = companyIds;
             this.format = format;
+            this.strLen = strLen;
             this.rateLimiter = rateLimiter;
             this.batchSize = batchSize;
         }
@@ -122,7 +126,7 @@ public class DataSkewLoad {
                 synchronized (sourceContext.getCheckpointLock()) {
                     for (int i = 0; i < batchSize; i++) {
                         int index = random.nextInt(companyIds.length);
-                        String row = genData(companyIds[index], format);
+                        String row = genData(companyIds[index], format, strLen);
                         sourceContext.collect(row);
                     }
                 }
@@ -144,7 +148,6 @@ public class DataSkewLoad {
     private static final Random random = new Random();
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String BASE_DATE = "2025-12-06";
-    private static final int STRING_LENGTH = 40;
 
     // Character set for random string generation
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -155,7 +158,7 @@ public class DataSkewLoad {
      * @param companyId If null or empty, randomly select a companyId; otherwise use the specified one
      * @return JSON string representing column name to value mapping
      */
-    public static String genData(String companyId, String format) {
+    public static String genData(String companyId, String format, int strLen) {
         // Select companyId
         String selectedCompanyId;
         if (companyId == null || companyId.isEmpty()) {
@@ -179,14 +182,14 @@ public class DataSkewLoad {
         String updatedAt = LocalDateTime.now().format(DATE_TIME_FORMATTER);
 
         // Generate random strings for varchar and json fields
-        String name = generateRandomString(STRING_LENGTH);
-        String email = generateRandomString(STRING_LENGTH);
-        String source = generateRandomString(STRING_LENGTH);
-        String integrationAccountId = generateRandomString(STRING_LENGTH);
-        String shippingAddress = generateRandomString(STRING_LENGTH);
-        String billingAddress = generateRandomString(STRING_LENGTH);
-        String affiliatedEntityId = generateRandomString(STRING_LENGTH);
-        String externalSourceId = generateRandomString(STRING_LENGTH);
+        String name = generateRandomString(strLen);
+        String email = generateRandomString(strLen);
+        String source = generateRandomString(strLen);
+        String integrationAccountId = generateRandomString(strLen);
+        String shippingAddress = generateRandomString(strLen);
+        String billingAddress = generateRandomString(strLen);
+        String affiliatedEntityId = generateRandomString(strLen);
+        String externalSourceId = generateRandomString(strLen);
 
         if (format.equalsIgnoreCase("csv")) {
             // Build CSV in DDL column order: id, companyId, createdAt, name, email, source,
@@ -284,16 +287,16 @@ public class DataSkewLoad {
     private static void testGenData() {
         // Test with random companyId
         System.out.println("Random companyId:");
-        System.out.println(genData(null, "csv"));
+        System.out.println(genData(null, "csv", 7));
         System.out.println();
 
         // Test with specific companyId "10"
         System.out.println("CompanyId = 10:");
-        System.out.println(genData("10", "csv"));
+        System.out.println(genData("10", "csv", 7));
         System.out.println();
 
         // Test with specific companyId "14"
         System.out.println("CompanyId = 14:");
-        System.out.println(genData("14", "csv"));
+        System.out.println(genData("14", "csv", 7));
     }
 }
