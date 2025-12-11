@@ -35,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class FeMetaService extends SharedService {
 
@@ -129,6 +130,11 @@ public class FeMetaService extends SharedService {
 
     public Optional<LabelStateService> getLabelStateService() {
         return Optional.of(labelStateService);
+    }
+
+    public String getFeUrl() {
+        int i = ThreadLocalRandom.current().nextInt(config.httpServiceConfig.candidateHosts.size());
+        return config.httpServiceConfig.candidateHosts.get(i);
     }
 
     public static class Config {

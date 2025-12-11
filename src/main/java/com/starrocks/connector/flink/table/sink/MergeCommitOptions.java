@@ -38,7 +38,8 @@ public class MergeCommitOptions {
     public static final ConfigOption<Long> CHUNK_SIZE =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "chunk.size").longType().defaultValue(20971520L);
     public static final ConfigOption<Integer> MAX_INFLIGHT_REQUESTS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(5);
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(-1)
+                    .withDescription("only zero value ensures the order which is useful for primary key table");
     public static final ConfigOption<Integer> BRPC_MAX_CONNECTIONS =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "brpc.max-connections").intType().defaultValue(3);
     public static final ConfigOption<Integer> BRPC_MIN_CONNECTIONS =
@@ -73,6 +74,8 @@ public class MergeCommitOptions {
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.timeout-ms").intType().defaultValue(60000);
     public static final ConfigOption<String> PROTOCOL =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "protocol").stringType().defaultValue("http");
+    public static final ConfigOption<Boolean> BACKEND_DIRECT_CONNECTION =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "backend-direct-connection").booleanType().defaultValue(false);
 
     public static final String ENABLE_MERGE_COMMIT = "enable_merge_commit";
     public static final String MERGE_COMMIT_INTERVAL_MS = "merge_commit_interval_ms";
@@ -111,6 +114,9 @@ public class MergeCommitOptions {
                     streamLoadProperties.put(MERGE_COMMIT_ASYNC, "true");
                 }
             }
+            // set reties to 0 to release memory as soon as possible and improve performance
+            int maxRetries = options.getOptional(StarRocksSinkOptions.SINK_MAX_RETRIES).orElse(0);
+            builder.maxRetries(maxRetries);
         }
         builder.setCheckLabelInitDelayMs(options.get(CHECK_STATE_INIT_DELAY_MS))
                 .setCheckLabelIntervalMs(options.get(CHECK_STATE_INTERVAL_MS))
@@ -129,6 +135,7 @@ public class MergeCommitOptions {
                 .setHttpIdleConnectionTimeoutMs(options.get(HTTP_IDLE_CONNECTION_TIMEOUT_MS))
                 .setNodeMetaUpdateIntervalMs(options.get(NODE_META_UPDATE_INTERVAL_MS))
                 .setMaxInflightRequests(options.get(MAX_INFLIGHT_REQUESTS))
-                .setProtocol(protocol);
+                .setProtocol(protocol)
+                .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION));
     }
 }

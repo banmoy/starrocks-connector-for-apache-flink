@@ -62,6 +62,7 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
     private FeMetaService feMetaService = null;
     private BackendHttpService backendService = null;
     private ScheduledExecutorService executorService;
+    private boolean backendDirectConnection = false;
 
     public MergeCommitHttpLoader() {
     }
@@ -102,6 +103,7 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             BackendHttpService service2 = BackendHttpService.getInstance(backendConfig);
             service2.takeRef();
             backendService = service2;
+            this.backendDirectConnection = properties.isBackendDirectConnection();
 
             this.executorService = new ScheduledThreadPoolExecutor(
                     properties.getIoThreadCount(),
@@ -165,11 +167,16 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             requestRun.rawSize = loadRequest.getChunk().chunkBytes();
             requestRun.compressSize = data.length;
             requestRun.compressTimeMs = System.currentTimeMillis();
-            Future<WorkerAddress> httpAddressFuture = feMetaService.getNodesStateService()
-                    .get().getHttpAddress(tableId, table.getLoadParameters());
-            requestRun.workerAddress = httpAddressFuture.get();
+            String loadUrl;
+            if (backendDirectConnection) {
+                Future<WorkerAddress> httpAddressFuture = feMetaService.getNodesStateService()
+                        .get().getHttpAddress(tableId, table.getLoadParameters());
+                requestRun.workerAddress = httpAddressFuture.get();
+                loadUrl = getLoadUrlFromBackend(requestRun.workerAddress, database, tableName);
+            } else {
+                loadUrl = getLoadUrlFromFrontend(database, tableName);
+            }
             requestRun.getWorkerAddrTimeMs = System.currentTimeMillis();
-            String loadUrl = backendService.getLoadUrl(requestRun.workerAddress, database, tableName);
             HttpPut httpPut = new HttpPut(loadUrl);
             httpPut.setConfig(RequestConfig.custom()
                                 .setSocketTimeout(properties.getSocketTimeout())
@@ -191,6 +198,18 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
                     database, tableName, loadRequest.getChunk().getChunkId(), e);
             table.loadFinish(requestRun, e);
         }
+    }
+
+    private static final String BACKEND_LOAD_URL_PATTERN = "http://%s:%s/api/%s/%s/_stream_load";
+    private static final String FRONTEND_LOAD_URL_PATTERN = "%s/api/%s/%s/_stream_load";
+
+    public String getLoadUrlFromBackend(WorkerAddress worker, String database, String table) {
+        return String.format(BACKEND_LOAD_URL_PATTERN, worker.getHost(), worker.getPort(), database, table);
+    }
+
+    public String getLoadUrlFromFrontend(String database, String table) {
+        String feUrl = feMetaService.getFeUrl();
+        return String.format(FRONTEND_LOAD_URL_PATTERN, feUrl, database, table);
     }
 
     private void sendAndWaitResponse(LoadRequest.RequestRun requestRun, HttpPut httpPut) {

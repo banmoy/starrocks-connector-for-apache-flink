@@ -21,7 +21,6 @@
 package com.starrocks.data.load.stream.mergecommit.be;
 
 import com.starrocks.data.load.stream.mergecommit.SharedService;
-import com.starrocks.data.load.stream.mergecommit.WorkerAddress;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPut;
@@ -110,10 +109,6 @@ public class BackendHttpService extends SharedService {
             String content = EntityUtils.toString(response.getEntity());
             return Pair.of(code, content);
         }
-    }
-
-    public String getLoadUrl(WorkerAddress worker, String database, String table) {
-        return String.format(LOAD_URL_PATTERN, worker.getHost(), worker.getPort(), database, table);
     }
 
     public static class Config {
