@@ -272,7 +272,7 @@ public class Table {
     }
 
     public void loadSyncFinish(LoadRequest.RequestRun requestRun) {
-        if (maxRetries > 0) {
+        if (requestRun.loadRequest.canRetry()) {
             return;
         }
         releaseBuffer(requestRun.loadRequest);
@@ -288,8 +288,7 @@ public class Table {
         LoadRequest request = requestRun.loadRequest;
         if (throwable != null) {
             requestRun.throwable = throwable;
-            // TODO check the throwable is retryable
-            int retryIntervalMs = request.nextRetryInterval();
+            int retryIntervalMs = request.nextRetryIntervalMs();
             if (retryIntervalMs > 0) {
                 LoadRequest.RequestRun nextRun = request.newRun();
                 mergeCommitLoader.sendLoad(nextRun, retryIntervalMs);

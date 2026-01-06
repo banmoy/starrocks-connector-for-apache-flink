@@ -159,7 +159,13 @@ public class StreamLoadUtils {
     }
 
 
-    /** Select an available host from the list. Each host is like 'ip:port'. */
+    /**
+     * Select an available host from the list. Each host is like 'ip:port'.
+     *
+     * @param hostList the list of hosts to select from
+     * @param connectionTimeout the connection timeout in milliseconds
+     * @return an available host, or null if no available host is found
+     */
     public static String selectAvailableHttpHost(List<String> hostList, int connectionTimeout) {
         for (String host : hostList) {
             if (host == null) {

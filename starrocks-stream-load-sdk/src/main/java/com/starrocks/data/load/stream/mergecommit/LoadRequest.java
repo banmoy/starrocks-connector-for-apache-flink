@@ -53,8 +53,25 @@ public class LoadRequest {
         this.startTimeMs = System.currentTimeMillis();
     }
 
-    public int nextRetryInterval() {
-        if (numRuns.get() > maxRetries + 1 || retryIntervalMs <= 0) {
+    /**
+     * Check if this request can still retry.
+     * Retry is possible when:
+     * 1. maxRetries &gt; 0 and retryIntervalMs &gt; 0 (retry is enabled)
+     * 2. numRuns &lt;= maxRetries (remaining retries available, total runs = 1 initial + maxRetries)
+     *
+     * @return true if the request can still retry, otherwise false
+     */
+    public boolean canRetry() {
+        return maxRetries > 0 && retryIntervalMs > 0 && numRuns.get() <= maxRetries;
+    }
+
+    /**
+     * Get the interval for next retry attempt.
+     *
+     * @return the retry interval in milliseconds. -1 if retry is not possible.
+     */
+    public int nextRetryIntervalMs() {
+        if (!canRetry()) {
             return -1;
         }
         return retryIntervalMs + ThreadLocalRandom.current().nextInt(2000);

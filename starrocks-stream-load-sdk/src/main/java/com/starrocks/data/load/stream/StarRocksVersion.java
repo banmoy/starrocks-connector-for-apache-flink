@@ -60,7 +60,12 @@ public class StarRocksVersion implements Serializable {
                 '}';
     }
 
-    /** Parse the version string, and return null if it's not a valid version pattern */
+    /**
+     * Parse the version string, and return null if it's not a valid version pattern.
+     *
+     * @param versionStr the version string to parse
+     * @return the parsed StarRocksVersion, or null if the version string is invalid
+     */
     public static StarRocksVersion parse(String versionStr) {
         if (versionStr == null) {
             return null;

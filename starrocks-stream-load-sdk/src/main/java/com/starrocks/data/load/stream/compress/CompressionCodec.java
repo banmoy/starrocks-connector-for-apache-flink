@@ -36,6 +36,7 @@ public interface CompressionCodec {
      * @param rawOutputStream the output stream to compress
      * @param contentSize the content size of the raw stream. -1 if the size is unknown
      * @return an output stream with compressed data
+     * @throws IOException if an I/O error occurs
      */
     OutputStream createCompressionStream(final OutputStream rawOutputStream, long contentSize) throws IOException;
 
