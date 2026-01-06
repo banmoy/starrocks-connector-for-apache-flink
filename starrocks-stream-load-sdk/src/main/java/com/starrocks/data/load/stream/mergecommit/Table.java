@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
@@ -232,27 +233,53 @@ public class Table {
     }
 
     private void waitInflightRequests(int threshold) {
-        long startTime = System.currentTimeMillis();
-        long awakeTimeoutNs = 5000000000L;
+        final long startTimeMs = System.currentTimeMillis();
+        final long startTimeNs = System.nanoTime();
+        final long timeoutNs = flushTimeoutMs > 0
+                ? TimeUnit.MILLISECONDS.toNanos(flushTimeoutMs)
+                : Long.MAX_VALUE;
+        final long awakeTimeoutNs = TimeUnit.SECONDS.toNanos(5);
         while (inflightLoadRequests.size() > threshold && tableThrowable.get() == null) {
             try {
-                long notElapsedNs = flushCondition.awaitNanos(awakeTimeoutNs);
+                long elapsedNs = System.nanoTime() - startTimeNs;
+                long remainingNs = timeoutNs - elapsedNs;
+                if (remainingNs <= 0) {
+                    RuntimeException timeoutEx = new RuntimeException(String.format(
+                            "Flush timeout when waiting inflight requests, db: %s, table: %s, " +
+                                    "elapsed: %d ms, timeout: %d ms, current inflight requests: %d, target size: %d",
+                            database, table, System.currentTimeMillis() - startTimeMs, flushTimeoutMs,
+                            inflightLoadRequests.size(), threshold));
+                    tableThrowable.compareAndSet(null, timeoutEx);
+                    throw timeoutEx;
+                }
+
+                long notElapsedNs = flushCondition.awaitNanos(Math.min(awakeTimeoutNs, remainingNs));
                 if (notElapsedNs <= 0) {
                     LOG.info("Waiting inflight requests, db: {}, table: {}, current inflight requests: {}," +
-                            " target size: {}, elapsed: {} ms, {}", database, table, inflightLoadRequests.size(),
-                            threshold, System.currentTimeMillis() - startTime, loadRequestsSummary());
+                            " target size: {}, elapsed: {} ms, timeout: {} ms, {}", database, table,
+                            inflightLoadRequests.size(), threshold, System.currentTimeMillis() - startTimeMs,
+                            flushTimeoutMs, loadRequestsSummary());
                 }
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 LOG.error("Fail to wait inflight requests, db: {}, table: {}, current inflight requests: {}," +
                             " target size: {}, elapsed: {} ms, {}", database, table, inflightLoadRequests.size(),
-                                System.currentTimeMillis() - startTime, threshold, loadRequestsSummary(), e);
+                                System.currentTimeMillis() - startTimeMs, threshold, loadRequestsSummary(), e);
                 throw new RuntimeException(String.format("Fail to wait inflight requests, db: %s, table: %s", database, table), e);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                LOG.error("Fail to wait inflight requests, db: {}, table: {}, current inflight requests: {}," +
+                                " target size: {}, elapsed: {} ms, {}", database, table, inflightLoadRequests.size(),
+                        System.currentTimeMillis() - startTimeMs, threshold, loadRequestsSummary(), e);
+                throw new RuntimeException(String.format(
+                        "Fail to wait inflight requests, db: %s, table: %s", database, table), e);
             }
         }
         if (tableThrowable.get() != null) {
             LOG.error("Fail to wait inflight requests, db: {}, table: {}, current inflight requests: {}," +
                             " target size: {}, elapsed: {} ms, {}", database, table, inflightLoadRequests.size(),
-                    System.currentTimeMillis() - startTime, threshold, loadRequestsSummary(), tableThrowable.get());
+                    System.currentTimeMillis() - startTimeMs, threshold, loadRequestsSummary(), tableThrowable.get());
             throw new RuntimeException(
                     String.format("Exception happened when waiting inflight requests db: %s, table: %s",
                             database, table), tableThrowable.get());
