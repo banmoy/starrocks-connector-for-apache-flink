@@ -33,6 +33,6 @@ public enum FlushReason {
     CACHE_FULL,
     // The number of buffered rows reaches the limit
     BUFFER_ROWS_REACH_LIMIT,
-    // Force flush, such as NormalStreamLoadManager.flush
+    // Force flush, such as DefaultStreamLoadManager.flush
     FORCE
 }

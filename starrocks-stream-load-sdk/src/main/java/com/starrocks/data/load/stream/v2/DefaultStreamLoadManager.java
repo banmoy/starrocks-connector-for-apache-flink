@@ -66,9 +66,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *     manager.snapshot(); // take a snapshot the current transactions, mainly recording the labels
  *     manager.commit();   // commit those snapshots
  */
-public class NormalStreamLoadManager implements StreamLoadManager, Serializable {
+public class DefaultStreamLoadManager implements StreamLoadManager, Serializable {
 
-    private static final Logger LOG = LoggerFactory.getLogger(NormalStreamLoadManager.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultStreamLoadManager.class);
 
     private static final long serialVersionUID = 1L;
 
@@ -121,7 +121,7 @@ public class NormalStreamLoadManager implements StreamLoadManager, Serializable 
     private transient StreamLoadListener streamLoadListener;
     private transient LabelGeneratorFactory labelGeneratorFactory;
 
-    public NormalStreamLoadManager(StreamLoadProperties properties, boolean enableAutoCommit) {
+    public DefaultStreamLoadManager(StreamLoadProperties properties, boolean enableAutoCommit) {
         this.properties = properties;
         if (!enableAutoCommit && !properties.isEnableTransaction()) {
             throw new IllegalArgumentException("You must use transaction stream load if not enable auto-commit");
