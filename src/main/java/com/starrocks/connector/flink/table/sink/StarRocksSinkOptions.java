@@ -542,7 +542,6 @@ public class StarRocksSinkOptions implements Serializable {
         }
 
         long chunkSize;
-        int maxRetries;
         boolean mergeCommit = "true".equalsIgnoreCase(streamLoadProps.get("enable_merge_commit"));
         if (mergeCommit) {
             chunkSize =  tableOptions.get(MergeCommitOptions.CHUNK_SIZE);
