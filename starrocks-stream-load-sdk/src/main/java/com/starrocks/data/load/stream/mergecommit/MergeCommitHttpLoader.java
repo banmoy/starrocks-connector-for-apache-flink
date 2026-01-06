@@ -139,6 +139,10 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             feMetaService.releaseRef();
             feMetaService = null;
         }
+        if (backendService != null) {
+            backendService.releaseRef();
+            backendService = null;
+        }
         LOG.info("Close merge commit loader");
     }
 
@@ -319,17 +323,17 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
     private void completeAsyncMode(LoadRequest.RequestRun requestRun,
                                    LabelStateService.LabelMeta labelMeta,
                                    Throwable throwable) {
+        LoadRequest loadRequest = requestRun.loadRequest;
+        if (throwable != null) {
+            loadRequest.getTable().loadFinish(requestRun, throwable);
+            return;
+        }
         TransactionStatus status = labelMeta.transactionStatus;
         requestRun.labelFinalTimeMs = System.currentTimeMillis();
         requestRun.labelRequestCount = labelMeta.getRequestCount();
         requestRun.labelLatencyMs = labelMeta.getLatencyMs();
         requestRun.labelHttpCostMs = labelMeta.getHttpCostMs();
         requestRun.labelPendingCostMs = labelMeta.getPendingCostMs();
-        LoadRequest loadRequest = requestRun.loadRequest;
-        if (throwable != null) {
-            loadRequest.getTable().loadFinish(requestRun, throwable);
-            return;
-        }
 
         if (status != TransactionStatus.VISIBLE) {
             loadRequest.getTable().loadFinish(

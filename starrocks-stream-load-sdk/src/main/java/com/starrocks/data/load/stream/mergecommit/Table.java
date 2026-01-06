@@ -240,7 +240,7 @@ public class Table {
                 if (notElapsedNs <= 0) {
                     LOG.info("Waiting inflight requests, db: {}, table: {}, current inflight requests: {}," +
                             " target size: {}, elapsed: {} ms, {}", database, table, inflightLoadRequests.size(),
-                                System.currentTimeMillis() - startTime, threshold, loadRequestsSummary());
+                            threshold, System.currentTimeMillis() - startTime, loadRequestsSummary());
                 }
             } catch (Exception e) {
                 LOG.error("Fail to wait inflight requests, db: {}, table: {}, current inflight requests: {}," +
