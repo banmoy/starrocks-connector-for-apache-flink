@@ -39,3 +39,7 @@ thrift/
 #
 
 src/test/java/com/starrocks/connector/flink/tmp
+.cursor
+starrocks-stream-load-sdk/.idea/
+.flattened-pom.xml
+starrocks-stream-load-sdk/.flattened-pom.xml

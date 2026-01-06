@@ -429,6 +429,8 @@ limitations under the License.
                         <exclude>README.md</exclude>
                         <exclude>.github/**</exclude>
                         <exclude>SECURITY.md</exclude>
+                        <exclude>.cursor/**</exclude>
+                        <exclude>starrocks-stream-load-sdk/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>
