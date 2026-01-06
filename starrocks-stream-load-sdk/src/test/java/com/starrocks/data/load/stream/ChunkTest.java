@@ -44,6 +44,31 @@ public class ChunkTest {
         testChunkBase(StreamLoadDataFormat.JSON);
     }
 
+    @Test
+    public void testEmptyCsvChunk() {
+        testEmptyChunkBase(StreamLoadDataFormat.CSV);
+    }
+
+    @Test
+    public void testEmptyJsonChunk() {
+        testEmptyChunkBase(StreamLoadDataFormat.JSON);
+    }
+
+    private void testEmptyChunkBase(StreamLoadDataFormat format) {
+        Chunk chunk = new Chunk(format, 1);
+        assertEquals(0, chunk.numRows());
+        assertEquals(0, chunk.rowBytes());
+        assertEquals(format.first().length + format.end().length, chunk.chunkBytes());
+
+        // Verify iterator returns FIRST and END even for empty chunk
+        Iterator<byte[]> iterator = chunk.iterator();
+        assertTrue(iterator.hasNext());
+        assertArrayEquals(format.first(), iterator.next());
+        assertTrue(iterator.hasNext());
+        assertArrayEquals(format.end(), iterator.next());
+        assertFalse(iterator.hasNext());
+    }
+
     private void testChunkBase(StreamLoadDataFormat format) {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         long expectedChunkBytes = format.first().length + format.end().length;

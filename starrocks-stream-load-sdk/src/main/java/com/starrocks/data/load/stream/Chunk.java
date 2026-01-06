@@ -108,7 +108,7 @@ public class Chunk {
         private ItemType nextItemType;
 
         public DataIterator() {
-            this.totalItems = 2 + buffer.size() + (buffer.size() - 1);
+            this.totalItems = 2 + buffer.size() + Math.max(0, buffer.size() - 1);
             this.rowIterator = buffer.iterator();
             this.nextItemType = ItemType.FIRST;
         }
