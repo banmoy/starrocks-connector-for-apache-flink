@@ -43,9 +43,9 @@ public class MergeCommitOptions {
     public static final ConfigOption<Integer> HTTP_THREAD_NUM =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.thread.num").intType().defaultValue(3);
     public static final ConfigOption<Integer> HTTP_MAX_CONNECTIONS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.max-connections").intType().defaultValue(3);
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.max-connections").intType().defaultValue(20);
     public static final ConfigOption<Integer> HTTP_TOTAL_MAX_CONNECTIONS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.total-max-connections").intType().defaultValue(30);
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.total-max-connections").intType().defaultValue(1000);
     public static final ConfigOption<Integer> HTTP_IDLE_CONNECTION_TIMEOUT_MS =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.idle-connection-timeout-ms").intType().defaultValue(60000);
     public static final ConfigOption<Integer> NODE_META_UPDATE_INTERVAL_MS =

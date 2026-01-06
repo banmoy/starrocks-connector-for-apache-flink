@@ -72,6 +72,7 @@ public class DefaultFeHttpService implements FeHttpService, Closeable {
                 .build();
         idleConnectionEvictor = new IdleConnectionEvictor(cm, 10, TimeUnit.SECONDS,
                 config.idleConnectionTimeoutMs, TimeUnit.MILLISECONDS);
+        idleConnectionEvictor.start();
         LOG.info("Init http client, maxConnectionsPerRoute: {}, totalMaxConnections: {}, " +
                 "idleConnectionTimeoutMs: {}, candidate hosts: {}",
                 config.maxConnectionsPerRoute, totalMaxConnections,
