@@ -37,7 +37,7 @@ public class StreamLoadManagerV2 implements StreamLoadManager, Serializable {
 
     public StreamLoadManagerV2(StreamLoadProperties properties, boolean enableAutoCommit) {
         boolean enableMergeCommit = properties.getHeaders()
-                .getOrDefault("enable_merge_commit", "false").equals("true");
+                .getOrDefault("enable_merge_commit", "false").equalsIgnoreCase("true");
         this.delegateManager = enableMergeCommit ? new MergeCommitManager(properties)
                 : new NormalStreamLoadManager(properties, enableAutoCommit);
     }

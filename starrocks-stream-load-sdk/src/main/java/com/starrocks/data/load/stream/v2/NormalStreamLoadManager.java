@@ -68,7 +68,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class NormalStreamLoadManager implements StreamLoadManager, Serializable {
 
-    private static final Logger LOG = LoggerFactory.getLogger(StreamLoadManagerV2.class);
+    private static final Logger LOG = LoggerFactory.getLogger(NormalStreamLoadManager.class);
 
     private static final long serialVersionUID = 1L;
 
