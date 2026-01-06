@@ -50,7 +50,7 @@ public class LZ4FrameCompressionCodecTest extends CompressionCodecTestBase {
     public void testCreate() {
         Map<String, Object> properties = new HashMap<>();
         LZ4FrameCompressionCodec codec1 = LZ4FrameCompressionCodec.create(properties);
-        assertEquals(LZ4FrameOutputStream.BLOCKSIZE.SIZE_4MB, codec1.getBlockSize());
+        assertEquals(LZ4FrameOutputStream.BLOCKSIZE.SIZE_64KB, codec1.getBlockSize());
 
         properties.put("compression.lz4.block.size", LZ4FrameOutputStream.BLOCKSIZE.SIZE_1MB);
         LZ4FrameCompressionCodec codec2 = LZ4FrameCompressionCodec.create(properties);

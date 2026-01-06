@@ -1,0 +1,109 @@
+/*
+ * Copyright 2021-present StarRocks, Inc. All rights reserved.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.starrocks.connector.flink.table.sink;
+
+import org.apache.flink.configuration.ConfigOption;
+import org.apache.flink.configuration.ConfigOptions;
+import org.apache.flink.configuration.ReadableConfig;
+
+import com.starrocks.data.load.stream.properties.StreamLoadProperties;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+public class MergeCommitOptions {
+
+    public static final String MERGE_COMMIT_PREFIX = "sink.merge-commit.";
+
+    public static final ConfigOption<Long> CHUNK_SIZE =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "chunk.size").longType().defaultValue(20971520L);
+    public static final ConfigOption<Integer> MAX_INFLIGHT_REQUESTS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(-1)
+                    .withDescription("only zero value ensures the order which is useful for primary key table");
+    public static final ConfigOption<Integer> HTTP_THREAD_NUM =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.thread.num").intType().defaultValue(3);
+    public static final ConfigOption<Integer> HTTP_MAX_CONNECTIONS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.max-connections").intType().defaultValue(3);
+    public static final ConfigOption<Integer> HTTP_TOTAL_MAX_CONNECTIONS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.total-max-connections").intType().defaultValue(30);
+    public static final ConfigOption<Integer> HTTP_IDLE_CONNECTION_TIMEOUT_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.idle-connection-timeout-ms").intType().defaultValue(60000);
+    public static final ConfigOption<Integer> NODE_META_UPDATE_INTERVAL_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "node-meta.update-interval-ms").intType().defaultValue(5000);
+    public static final ConfigOption<Integer> CHECK_STATE_INIT_DELAY_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.init-delay-ms").intType().defaultValue(500);
+    public static final ConfigOption<Integer> CHECK_STATE_INTERVAL_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.interval-ms").intType().defaultValue(500);
+    public static final ConfigOption<Integer> CHECK_STATE_TIMEOUT_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.timeout-ms").intType().defaultValue(60000);
+    public static final ConfigOption<Boolean> BACKEND_DIRECT_CONNECTION =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "backend-direct-connection").booleanType().defaultValue(false);
+
+    public static final String ENABLE_MERGE_COMMIT = "enable_merge_commit";
+    public static final String MERGE_COMMIT_INTERVAL_MS = "merge_commit_interval_ms";
+    public static final String MERGE_COMMIT_PARALLEL = "merge_commit_parallel";
+    public static final String MERGE_COMMIT_ASYNC = "merge_commit_async";
+
+    public static List<ConfigOption<?>> getAllConfigOptions() {
+        List<ConfigOption<?>> configOptions = new ArrayList<>();
+        Field[] fields = MergeCommitOptions.class.getDeclaredFields();
+        for (Field field : fields) {
+            if (!field.getType().equals(ConfigOption.class)) {
+                continue;
+            }
+            try {
+                field.setAccessible(true);
+                ConfigOption<?> option = (ConfigOption<?>) field.get(null);
+                configOptions.add(option);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("can't get ConfigOption " + field.getName(), e);
+            }
+        }
+        return configOptions;
+    }
+
+    public static void buildMergeCommitOptions(
+            ReadableConfig options, Map<String, String> streamLoadProperties, StreamLoadProperties.Builder builder) {
+        if ("true".equalsIgnoreCase(streamLoadProperties.get(ENABLE_MERGE_COMMIT))) {
+            if (!streamLoadProperties.containsKey(MERGE_COMMIT_PARALLEL)) {
+                streamLoadProperties.put(MERGE_COMMIT_PARALLEL, "3");
+            }
+            if (!streamLoadProperties.containsKey(MERGE_COMMIT_ASYNC)) {
+                streamLoadProperties.put(MERGE_COMMIT_ASYNC, "true");
+            }
+            // set reties to 0 to release memory as soon as possible and improve performance
+            int maxRetries = options.getOptional(StarRocksSinkOptions.SINK_MAX_RETRIES).orElse(0);
+            builder.maxRetries(maxRetries);
+            builder.setCheckLabelInitDelayMs(options.get(CHECK_STATE_INIT_DELAY_MS))
+                    .setCheckLabelIntervalMs(options.get(CHECK_STATE_INTERVAL_MS))
+                    .setCheckLabelTimeoutMs(options.get(CHECK_STATE_TIMEOUT_MS))
+                    .setHttpThreadNum(options.get(HTTP_THREAD_NUM))
+                    .setHttpMaxConnectionsPerRoute(options.get(HTTP_MAX_CONNECTIONS))
+                    .setHttpTotalMaxConnections(options.get(HTTP_TOTAL_MAX_CONNECTIONS))
+                    .setHttpIdleConnectionTimeoutMs(options.get(HTTP_IDLE_CONNECTION_TIMEOUT_MS))
+                    .setNodeMetaUpdateIntervalMs(options.get(NODE_META_UPDATE_INTERVAL_MS))
+                    .setMaxInflightRequests(options.get(MAX_INFLIGHT_REQUESTS))
+                    .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION));
+        }
+    }
+}

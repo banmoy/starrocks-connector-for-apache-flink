@@ -93,6 +93,19 @@ public class StreamLoadProperties implements Serializable {
     // Controls whether client should sanitize StarRocks error logs before logging
     private final boolean sanitizeErrorLog;
 
+    // options for merge commit ============================
+    private final int checkLabelInitDelayMs;
+    private final int checkLabelIntervalMs;
+    private final int checkLabelTimeoutMs;
+    private final int httpThreadNum;
+    private final int httpMaxConnectionsPerRoute;
+    private final int httpTotalMaxConnections;
+    private final int httpIdleConnectionTimeoutMs;
+    private final int nodeMetaUpdateIntervalMs;
+    private final int maxInflightRequests;
+    private final boolean backendDirectConnection;
+    private final boolean blackhole;
+
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
         this.loadUrls = builder.loadUrls;
@@ -127,6 +140,17 @@ public class StreamLoadProperties implements Serializable {
 
         this.headers = Collections.unmodifiableMap(builder.headers);
         this.sanitizeErrorLog = builder.sanitizeErrorLog;
+        this.checkLabelInitDelayMs = builder.checkLabelInitDelayMs;
+        this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
+        this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
+        this.httpThreadNum = builder.httpThreadNum;
+        this.httpMaxConnectionsPerRoute = builder.httpMaxConnectionsPerRoute;
+        this.httpTotalMaxConnections = builder.httpTotalMaxConnections;
+        this.httpIdleConnectionTimeoutMs = builder.httpIdleConnectionTimeoutMs;
+        this.nodeMetaUpdateIntervalMs = builder.nodeMetaUpdateIntervalMs;
+        this.maxInflightRequests = builder.maxInflightRequests;
+        this.backendDirectConnection = builder.backendDirectConnection;
+        this.blackhole = builder.blackhole;
     }
 
     public boolean isEnableTransaction() {
@@ -244,6 +268,50 @@ public class StreamLoadProperties implements Serializable {
         return sanitizeErrorLog;
     }
 
+    public int getCheckLabelInitDelayMs() {
+        return checkLabelInitDelayMs;
+    }
+
+    public int getCheckLabelIntervalMs() {
+        return checkLabelIntervalMs;
+    }
+
+    public int getCheckLabelTimeoutMs() {
+        return checkLabelTimeoutMs;
+    }
+
+    public int getHttpThreadNum() {
+        return httpThreadNum;
+    }
+
+    public int getHttpMaxConnectionsPerRoute() {
+        return httpMaxConnectionsPerRoute;
+    }
+
+    public int getHttpTotalMaxConnections() {
+        return httpTotalMaxConnections;
+    }
+
+    public int getHttpIdleConnectionTimeoutMs() {
+        return httpIdleConnectionTimeoutMs;
+    }
+
+    public int getNodeMetaUpdateIntervalMs() {
+        return nodeMetaUpdateIntervalMs;
+    }
+
+    public int getMaxInflightRequests() {
+        return maxInflightRequests;
+    }
+
+    public boolean isBackendDirectConnection() {
+        return backendDirectConnection;
+    }
+
+    public boolean isBlackhole() {
+        return blackhole;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -279,6 +347,18 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
+        private int checkLabelInitDelayMs = 300;
+        private int checkLabelIntervalMs = 200;
+        private int checkLabelTimeoutMs = 60000;
+        private int httpThreadNum = 3;
+        private int httpMaxConnectionsPerRoute = 3;
+        private int httpTotalMaxConnections = 30;
+        private int httpIdleConnectionTimeoutMs = 60000;
+        private int nodeMetaUpdateIntervalMs = 2000;
+        private int maxInflightRequests = -1;
+        private String protocol = "http";
+        private boolean backendDirectConnection = false;
+        private boolean blackhole = false;
 
         private boolean sanitizeErrorLog = false;
 
@@ -446,6 +526,66 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder sanitizeErrorLog(boolean sanitizeErrorLog) {
             this.sanitizeErrorLog = sanitizeErrorLog;
+            return this;
+        }
+
+        public Builder setCheckLabelInitDelayMs(int checkLabelInitDelayMs) {
+            this.checkLabelInitDelayMs = checkLabelInitDelayMs;
+            return this;
+        }
+
+        public Builder setCheckLabelIntervalMs(int checkLabelIntervalMs) {
+            this.checkLabelIntervalMs = checkLabelIntervalMs;
+            return this;
+        }
+
+        public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
+            this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+            return this;
+        }
+
+        public Builder setHttpThreadNum(int httpThreadNum) {
+            this.httpThreadNum = httpThreadNum;
+            return this;
+        }
+
+        public Builder setHttpMaxConnectionsPerRoute(int httpMaxConnectionsPerRoute) {
+            this.httpMaxConnectionsPerRoute = httpMaxConnectionsPerRoute;
+            return this;
+        }
+
+        public Builder setHttpTotalMaxConnections(int httpTotalMaxConnections) {
+            this.httpTotalMaxConnections = httpTotalMaxConnections;
+            return this;
+        }
+
+        public Builder setHttpIdleConnectionTimeoutMs(int httpIdleConnectionTimeoutMs) {
+            this.httpIdleConnectionTimeoutMs = httpIdleConnectionTimeoutMs;
+            return this;
+        }
+
+       public Builder setNodeMetaUpdateIntervalMs(int nodeMetaUpdateIntervalMs) {
+            this.nodeMetaUpdateIntervalMs = nodeMetaUpdateIntervalMs;
+            return this;
+        }
+
+        public Builder setMaxInflightRequests(int maxInflightRequests) {
+            this.maxInflightRequests = maxInflightRequests;
+            return this;
+        }
+
+        public Builder setProtocol(String protocol) {
+            this.protocol = protocol;
+            return this;
+        }
+
+        public Builder setBackendDirectConnection(boolean directConnection) {
+            this.backendDirectConnection = directConnection;
+            return this;
+        }
+
+        public Builder setBlackhole(boolean blackhole) {
+            this.blackhole = blackhole;
             return this;
         }
 

@@ -157,6 +157,8 @@ public class StarRocksSinkOptions implements Serializable {
                     "in the coming 2.0. Note that it's not compatible after changing the flag, that's, you can't recover from " +
                     "the previous job after changing the flag.");
 
+    public static final ConfigOption<Boolean> SINK_BLACKHOLE = ConfigOptions.key("sink.blackhole").booleanType().defaultValue(false);
+
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
     public static final ConfigOption<Boolean> SINK_WRAP_JSON_AS_ARRAY = ConfigOptions.key("sink.wrap-json-as-array")
@@ -215,6 +217,7 @@ public class StarRocksSinkOptions implements Serializable {
         validateStreamLoadUrl();
         validateSinkSemantic();
         validateParamsRange();
+        validateMergeCommit();
     }
 
     public void setTableSchemaFieldNames(String[] fieldNames) {
@@ -395,6 +398,10 @@ public class StarRocksSinkOptions implements Serializable {
         return tableOptions.get(SINK_SANITIZE_ERROR_LOG);
     }
 
+    public boolean isBlackhole() {
+        return tableOptions.get(SINK_BLACKHOLE);
+    }
+
     private void validateStreamLoadUrl() {
         tableOptions.getOptional(LOAD_URL).ifPresent(urlList -> {
             for (String host : urlList) {
@@ -477,6 +484,16 @@ public class StarRocksSinkOptions implements Serializable {
                 "Either all or none of the following options should be provided:\n" + String.join("\n", propertyNames));
     }
 
+    private void validateMergeCommit() {
+        if (!"true".equalsIgnoreCase(streamLoadProps.get(MergeCommitOptions.ENABLE_MERGE_COMMIT))) {
+            return;
+        }
+        if (!streamLoadProps.containsKey(MergeCommitOptions.MERGE_COMMIT_INTERVAL_MS)) {
+            throw new IllegalArgumentException("Must set 'sink.properties.merge_commit_interval_ms' when " +
+                    "'sink.properties.enable_merge_commit' is true");
+        }
+    }
+
     private void parseSinkStreamLoadProperties() {
         tableOptionsMap.keySet().stream()
                 .filter(key -> key.startsWith(SINK_PROPERTIES_PREFIX))
@@ -524,13 +541,21 @@ public class StarRocksSinkOptions implements Serializable {
             throw new RuntimeException("data format are not support");
         }
 
+        long chunkSize;
+        int maxRetries;
+        boolean mergeCommit = "true".equalsIgnoreCase(streamLoadProps.get("enable_merge_commit"));
+        if (mergeCommit) {
+            chunkSize =  tableOptions.get(MergeCommitOptions.CHUNK_SIZE);
+        } else {
+            chunkSize = tableOptions.get(SINK_CHUNK_LIMIT);
+        }
+
         StreamLoadTableProperties.Builder defaultTablePropertiesBuilder = StreamLoadTableProperties.builder()
                 .database(getDatabaseName())
                 .table(getTableName())
                 .streamLoadDataFormat(dataFormat)
-                .chunkLimit(getChunkLimit())
-                .enableUpsertDelete(supportUpsertDelete())
-                .addCommonProperties(getSinkStreamLoadProperties());
+                .chunkLimit(chunkSize)
+                .enableUpsertDelete(supportUpsertDelete());
 
         if (hasColumnMappingProperty()) {
             defaultTablePropertiesBuilder.columns(streamLoadProps.get("columns"));
@@ -576,10 +601,10 @@ public class StarRocksSinkOptions implements Serializable {
                 streamLoadProperties.put("ignore_json_size", "true");
             }
         }
+
         StreamLoadProperties.Builder builder = StreamLoadProperties.builder()
                 .loadUrls(getLoadUrlList().toArray(new String[0]))
                 .jdbcUrl(getJdbcUrl())
-                .defaultTableProperties(defaultTablePropertiesBuilder.build())
                 .cacheMaxBytes(getSinkMaxBytes())
                 .connectTimeout(getConnectTimeout())
                 .waitForContinueTimeoutMs(getWaitForContinueTimeout())
@@ -594,9 +619,12 @@ public class StarRocksSinkOptions implements Serializable {
                 // TODO not support retry currently
                 .maxRetries(0)
                 .retryIntervalInMs(getRetryIntervalMs())
-                .addHeaders(streamLoadProperties)
-                .sanitizeErrorLog(isSanitizeErrorLog());
-
+                .sanitizeErrorLog(isSanitizeErrorLog())
+                .setBlackhole(isBlackhole());
+        MergeCommitOptions.buildMergeCommitOptions(tableOptions, streamLoadProperties, builder);
+        defaultTablePropertiesBuilder.addCommonProperties(streamLoadProperties);
+        builder.addHeaders(streamLoadProperties)
+                .defaultTableProperties(defaultTablePropertiesBuilder.build());
         for (StreamLoadTableProperties tableProperties : tablePropertiesList) {
             builder.addTableProperties(tableProperties);
         }
