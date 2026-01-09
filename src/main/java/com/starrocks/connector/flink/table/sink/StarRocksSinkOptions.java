@@ -435,9 +435,9 @@ public class StarRocksSinkOptions implements Serializable {
             }
         });
         tableOptions.getOptional(SINK_BATCH_FLUSH_INTERVAL).ifPresent(val -> {
-            if (val < 1000L || val > 3600000L) {
+            if (val <= 0 || val > 3600000L) {
                 throw new ValidationException(
-                        String.format("Unsupported value '%d' for '%s'. Supported value range: [1000, 3600000].",
+                        String.format("Unsupported value '%d' for '%s'. Supported value range: (0, 3600000].",
                                 val, SINK_BATCH_FLUSH_INTERVAL.key()));
             }
         });

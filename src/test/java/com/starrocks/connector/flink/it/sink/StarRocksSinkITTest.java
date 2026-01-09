@@ -898,6 +898,7 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
                         "'table-name' = '" + tableName + "'," +
                         "'username' = 'root'," +
                         "'password' = ''," +
+                        "'sink.buffer-flush.interval-ms' = '500'," +
                         "'sink.properties.enable_merge_commit' = 'true'," +
                         "'sink.properties.merge_commit_async' = '" + (async ? "true" : "false") + "'," +
                         "'sink.properties.merge_commit_interval_ms' = '1000'," +
