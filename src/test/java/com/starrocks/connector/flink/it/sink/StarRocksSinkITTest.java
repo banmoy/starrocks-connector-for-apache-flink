@@ -866,45 +866,43 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
         executeSrSQL(createStarRocksTable);
         return tableName;
     }
-
+    
     @Test
-    public void testMergeCommit() throws Exception {
-        assumeTrue(isSinkV2);
-        for (boolean isPrimaryKey : Arrays.asList(false, true)) {
-            for (boolean async : Arrays.asList(false, true)) {
-                for (boolean directConnection : Arrays.asList(false, true)) {
-                    testMergeCommitBase(isPrimaryKey, async, directConnection);
-                }
-            }
+    public void testMergeCommitAsync() throws Exception {
+        for (boolean async : Arrays.asList(false, true)) {
+            Map<String, String> options = new HashMap<>();
+            options.put("sink.properties.merge_commit_async", String.valueOf(async));
+            testMergeCommitBase(false, options);
+            testMergeCommitBase(true, options);
         }
     }
 
-    private void testMergeCommitBase(boolean isPrimaryKey, boolean async, boolean backendDirectConnection) throws Exception {
+    @Test
+    public void testMergeCommitBackendDirectConnection() throws Exception {
+        for (boolean directConnection : Arrays.asList(false, true)) {
+            Map<String, String> options = new HashMap<>();
+            options.put("sink.merge-commit.backend-direct-connection", String.valueOf(directConnection));
+            testMergeCommitBase(false, options);
+            testMergeCommitBase(true, options);
+        }
+    }
+
+    @Test
+    public void testMergeCommitInOrder() throws Exception {
+        Map<String, String> options = new HashMap<>();
+        options.put("sink.merge-commit.max-inflight-requests", String.valueOf(0));
+        testMergeCommitBase(false, options);
+        testMergeCommitBase(true, options);
+    }
+
+    private void testMergeCommitBase(boolean isPrimaryKey, Map<String, String> options) throws Exception {
+        assumeTrue(isSinkV2);
         String tableName = createMergeCommitTable("testMergeCommitBase", isPrimaryKey);
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
         StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
-        String createSQL =
-                "CREATE TABLE sink(" +
-                        "c0 INT," +
-                        "c1 FLOAT," +
-                        "c2 STRING" +
-                        (!isPrimaryKey ? "" : ", PRIMARY KEY (`c0`) NOT ENFORCED") +
-                        ") WITH ( " +
-                        "'connector' = 'starrocks'," +
-                        "'jdbc-url'='" + getJdbcUrl() + "'," +
-                        "'load-url'='" + getHttpUrls() + "'," +
-                        "'database-name' = '" + DB_NAME + "'," +
-                        "'table-name' = '" + tableName + "'," +
-                        "'username' = 'root'," +
-                        "'password' = ''," +
-                        "'sink.buffer-flush.interval-ms' = '500'," +
-                        "'sink.properties.enable_merge_commit' = 'true'," +
-                        "'sink.properties.merge_commit_async' = '" + (async ? "true" : "false") + "'," +
-                        "'sink.properties.merge_commit_interval_ms' = '1000'," +
-                        "'sink.merge-commit.backend-direct-connection' = '" + (backendDirectConnection ? "true" : "false") + "'" +
-                        ")";
-        tEnv.executeSql(createSQL);
+        String sinkDdl = buildMergeCommitSinkDdl(tableName, isPrimaryKey, options);
+        tEnv.executeSql(sinkDdl);
 
         List<Row> testData = new ArrayList<>();
         testData.add(Row.of(1, 10.1f, "abc"));
@@ -922,6 +920,34 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
         tEnv.executeSql("INSERT INTO sink SELECT * FROM src").await();
         List<List<Object>> actualData = scanTable(DB_CONNECTION, DB_NAME, tableName);
         verifyResult(expectedData, actualData);
+    }
+
+    private String buildMergeCommitSinkDdl(String tableName, boolean isPrimaryKey, Map<String, String> options) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(
+                "CREATE TABLE sink(" +
+                        "c0 INT," +
+                        "c1 FLOAT," +
+                        "c2 STRING" +
+                        (!isPrimaryKey ? "" : ", PRIMARY KEY (`c0`) NOT ENFORCED") +
+                        ") WITH ( " +
+                        "'connector' = 'starrocks'," +
+                        "'jdbc-url'='" + getJdbcUrl() + "'," +
+                        "'load-url'='" + getHttpUrls() + "'," +
+                        "'database-name' = '" + DB_NAME + "'," +
+                        "'table-name' = '" + tableName + "'," +
+                        "'username' = 'root'," +
+                        "'password' = ''," +
+                        "'sink.buffer-flush.interval-ms' = '500'," +
+                        "'sink.properties.enable_merge_commit' = 'true'," +
+                        "'sink.properties.merge_commit_interval_ms' = '1000'"
+                );
+        for (Map.Entry<String, String> entry : options.entrySet()) {
+            builder.append(",\n");
+            builder.append(String.format("'%s' = '%s'", entry.getKey(), entry.getValue()));
+        }
+        builder.append(")");
+        return builder.toString();
     }
 
     private String createMergeCommitTable(String tablePrefix, boolean isPrimaryKey) throws Exception {

@@ -51,7 +51,7 @@ public class StarRocksSinkOptions implements Serializable {
 
     private static final long serialVersionUID = 1L;
     private static final long KILO_BYTES_SCALE = 1024L;
-    private static final long MEGA_BYTES_SCALE = KILO_BYTES_SCALE * KILO_BYTES_SCALE;
+    public static final long MEGA_BYTES_SCALE = KILO_BYTES_SCALE * KILO_BYTES_SCALE;
     private static final long GIGA_BYTES_SCALE = MEGA_BYTES_SCALE * KILO_BYTES_SCALE;
 
     public enum StreamLoadFormat {
@@ -541,19 +541,11 @@ public class StarRocksSinkOptions implements Serializable {
             throw new RuntimeException("data format are not support");
         }
 
-        long chunkSize;
-        boolean mergeCommit = "true".equalsIgnoreCase(streamLoadProps.get("enable_merge_commit"));
-        if (mergeCommit) {
-            chunkSize =  tableOptions.get(MergeCommitOptions.CHUNK_SIZE);
-        } else {
-            chunkSize = tableOptions.get(SINK_CHUNK_LIMIT);
-        }
-
         StreamLoadTableProperties.Builder defaultTablePropertiesBuilder = StreamLoadTableProperties.builder()
                 .database(getDatabaseName())
                 .table(getTableName())
                 .streamLoadDataFormat(dataFormat)
-                .chunkLimit(chunkSize)
+                .chunkLimit(getChunkLimit())
                 .enableUpsertDelete(supportUpsertDelete());
 
         if (hasColumnMappingProperty()) {
@@ -620,7 +612,7 @@ public class StarRocksSinkOptions implements Serializable {
                 .retryIntervalInMs(getRetryIntervalMs())
                 .sanitizeErrorLog(isSanitizeErrorLog())
                 .setBlackhole(isBlackhole());
-        MergeCommitOptions.buildMergeCommitOptions(tableOptions, streamLoadProperties, builder);
+        MergeCommitOptions.buildMergeCommitOptions(tableOptions, streamLoadProperties, defaultTablePropertiesBuilder, builder);
         defaultTablePropertiesBuilder.addCommonProperties(streamLoadProperties);
         builder.addHeaders(streamLoadProperties)
                 .defaultTableProperties(defaultTablePropertiesBuilder.build());

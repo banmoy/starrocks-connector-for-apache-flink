@@ -25,21 +25,27 @@ import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.ReadableConfig;
 
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
+import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
+import static com.starrocks.connector.flink.table.sink.StarRocksSinkOptions.MEGA_BYTES_SCALE;
 
 public class MergeCommitOptions {
 
     public static final String MERGE_COMMIT_PREFIX = "sink.merge-commit.";
 
+    private static final long DEFAULT_CHUNK_SIZE_FOR_IN_ORDER = 500 * MEGA_BYTES_SCALE;
+    private static final long DEFAULT_CHUNK_SIZE_FOR_OUT_OF_ORDER = 20 * MEGA_BYTES_SCALE;
     public static final ConfigOption<Long> CHUNK_SIZE =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "chunk.size").longType().defaultValue(20971520L);
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "chunk.size").longType().noDefaultValue();
     public static final ConfigOption<Integer> MAX_INFLIGHT_REQUESTS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(-1)
-                    .withDescription("only zero value ensures the order which is useful for primary key table");
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(Integer.MAX_VALUE)
+                    .withDescription("non-positive value ensures the order which is useful for primary key table");
     public static final ConfigOption<Integer> HTTP_THREAD_NUM =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.thread.num").intType().defaultValue(3);
     public static final ConfigOption<Integer> HTTP_MAX_CONNECTIONS =
@@ -83,7 +89,9 @@ public class MergeCommitOptions {
     }
 
     public static void buildMergeCommitOptions(
-            ReadableConfig options, Map<String, String> streamLoadProperties, StreamLoadProperties.Builder builder) {
+            ReadableConfig options, Map<String, String> streamLoadProperties,
+            StreamLoadTableProperties.Builder defaultTablePropertiesBuilder,
+            StreamLoadProperties.Builder streamLoadPropertiesBuilder) {
         if ("true".equalsIgnoreCase(streamLoadProperties.get(ENABLE_MERGE_COMMIT))) {
             if (!streamLoadProperties.containsKey(MERGE_COMMIT_PARALLEL)) {
                 streamLoadProperties.put(MERGE_COMMIT_PARALLEL, "3");
@@ -91,10 +99,18 @@ public class MergeCommitOptions {
             if (!streamLoadProperties.containsKey(MERGE_COMMIT_ASYNC)) {
                 streamLoadProperties.put(MERGE_COMMIT_ASYNC, "true");
             }
+            int maxInflightRequests = options.get(MergeCommitOptions.MAX_INFLIGHT_REQUESTS);
+            Optional<Long> optionalChunkSize = options.getOptional(MergeCommitOptions.CHUNK_SIZE);
+            if (optionalChunkSize.isPresent()) {
+                defaultTablePropertiesBuilder.chunkLimit(optionalChunkSize.get());
+            } else {
+                long chunkSize = maxInflightRequests <= 0 ? DEFAULT_CHUNK_SIZE_FOR_IN_ORDER : DEFAULT_CHUNK_SIZE_FOR_OUT_OF_ORDER;
+                defaultTablePropertiesBuilder.chunkLimit(chunkSize);
+            }
+
             // set reties to 0 to release memory as soon as possible and improve performance
             int maxRetries = options.getOptional(StarRocksSinkOptions.SINK_MAX_RETRIES).orElse(0);
-            builder.maxRetries(maxRetries);
-            builder.setCheckLabelInitDelayMs(options.get(CHECK_STATE_INIT_DELAY_MS))
+            streamLoadPropertiesBuilder.setCheckLabelInitDelayMs(options.get(CHECK_STATE_INIT_DELAY_MS))
                     .setCheckLabelIntervalMs(options.get(CHECK_STATE_INTERVAL_MS))
                     .setCheckLabelTimeoutMs(options.get(CHECK_STATE_TIMEOUT_MS))
                     .setHttpThreadNum(options.get(HTTP_THREAD_NUM))
@@ -103,7 +119,8 @@ public class MergeCommitOptions {
                     .setHttpIdleConnectionTimeoutMs(options.get(HTTP_IDLE_CONNECTION_TIMEOUT_MS))
                     .setNodeMetaUpdateIntervalMs(options.get(NODE_META_UPDATE_INTERVAL_MS))
                     .setMaxInflightRequests(options.get(MAX_INFLIGHT_REQUESTS))
-                    .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION));
+                    .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION))
+                    .maxRetries(maxRetries);
         }
     }
 }

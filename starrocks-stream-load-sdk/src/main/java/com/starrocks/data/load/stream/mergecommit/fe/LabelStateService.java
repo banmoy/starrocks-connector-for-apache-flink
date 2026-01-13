@@ -164,6 +164,7 @@ public class LabelStateService implements Closeable {
 
         LabelMeta newMeta = labelMetas.get(new LabelId(labelMeta.tableId.db, labelMeta.label));
         if (newMeta == null || newMeta != labelMeta) {
+            labelMeta.finishTimeMs = System.currentTimeMillis();
             labelMeta.future.completeExceptionally(new RuntimeException("Label is discarded"));
             LOG.error("Failed to retry to get label state because label is discarded, db: {}, table: {}, label: {}",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label);
@@ -171,6 +172,7 @@ public class LabelStateService implements Closeable {
         }
 
         if (System.currentTimeMillis() - labelMeta.createTimeMs >= labelMeta.timeoutMs) {
+            labelMeta.finishTimeMs = System.currentTimeMillis();
             labelMeta.future.completeExceptionally(new RuntimeException("Get label state timeout"));
             LOG.error("Failed to retry to get label state because of timeout, db: {}, table: {}, label: {}, timeout: {}ms",
                     labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.timeoutMs);
