@@ -58,6 +58,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.starrocks.data.load.stream.StreamLoadConstants.RESULT_STATUS_FAILED;
+import static com.starrocks.data.load.stream.StreamLoadUtils.getErrorLog;
 
 public class DefaultStreamLoader implements StreamLoader, Serializable {
 
@@ -340,7 +341,7 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
                         throw new StreamLoadFailException(errorMsage);
                     }
                 } else {
-                    String errorLog = getErrorLog(streamLoadBody.getErrorURL());
+                    String errorLog = getErrorLog(streamLoadBody.getErrorURL(), properties.isSanitizeErrorLog());
                     String errorMsg = String.format("Stream load failed because of error, db: %s, table: %s, label: %s, " +
                                     "\nresponseBody: %s\nerrorLog: %s", region.getDatabase(), region.getTable(), label,
                                     responseBody, errorLog);
@@ -487,39 +488,6 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
                     return state;
                 }
             }
-        }
-    }
-
-    protected String getErrorLog(String errorUrl) {
-        if (errorUrl == null || !errorUrl.startsWith("http")) {
-            return null;
-        }
-
-        try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
-            HttpGet httpGet = new HttpGet(errorUrl);
-            try (CloseableHttpResponse resp = httpclient.execute(httpGet)) {
-                int code = resp.getStatusLine().getStatusCode();
-                if (200 != code) {
-                    log.warn("Request error log failed with error code: {}, errorUrl: {}", code, errorUrl);
-                    return null;
-                }
-
-                HttpEntity respEntity = resp.getEntity();
-                if (respEntity == null) {
-                    log.warn("Request error log failed with null entity, errorUrl: {}", errorUrl);
-                    return null;
-                }
-                String errorLog = EntityUtils.toString(respEntity);
-                if (errorLog != null && errorLog.length() > ERROR_LOG_MAX_LENGTH) {
-                    errorLog = errorLog.substring(0, ERROR_LOG_MAX_LENGTH);
-                }
-                return properties != null && properties.isSanitizeErrorLog()
-                        ? StreamLoadUtils.sanitizeErrorLog(errorLog)
-                        : errorLog;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to get error log: {}.", errorUrl, e);
-            return String.format("Failed to get error log: %s, exception message: %s", errorUrl, e.getMessage());
         }
     }
 

@@ -340,11 +340,15 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
         requestRun.labelPendingCostMs = labelMeta.getPendingCostMs();
 
         if (status != TransactionStatus.VISIBLE && status != TransactionStatus.COMMITTED) {
-            loadRequest.getTable().loadFinish(
-                    requestRun,
-                    new RuntimeException(String.format(
-                            "Load failed, label %s, current status: %s, reason: %s",
-                            requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason)));
+            Optional<String> errorLog =
+                    StreamLoadUtils.tryGetErrorLogForMergeCommit(labelMeta.reason, properties.isSanitizeErrorLog());
+            String errorMsg = String.format(
+                    "Label %s does not in final status, current status: %s, reason: %s",
+                    requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason);
+            if (errorLog.isPresent()) {
+                errorMsg = errorMsg + ", errorLog: " + errorLog.get();
+            }
+            loadRequest.getTable().loadFinish(requestRun, new RuntimeException(errorMsg));
         } else {
             loadRequest.getTable().loadFinish(requestRun, null);
         }
