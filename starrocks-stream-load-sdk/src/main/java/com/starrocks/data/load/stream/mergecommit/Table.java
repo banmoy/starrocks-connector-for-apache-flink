@@ -57,7 +57,7 @@ public class Table {
     private final int retryIntervalInMs;
     private final int flushIntervalMs;
     private final long chunkSize;
-    private final int maxInflightRequests;
+    private final int maxConcurrentRequests;
     private final Optional<CompressionCodec> compressionCodec;
     private final AtomicLong chunkIdGenerator;
     private volatile Chunk activeChunk;
@@ -83,7 +83,7 @@ public class Table {
             int retryIntervalInMs,
             int flushIntervalMs,
             long chunkSize,
-            int maxInflightRequests) {
+            int maxConcurrentRequests) {
         this.database = database;
         this.table = table;
         this.manager = manager;
@@ -93,7 +93,7 @@ public class Table {
         this.retryIntervalInMs = retryIntervalInMs;
         this.flushIntervalMs = flushIntervalMs;
         this.chunkSize = chunkSize;
-        this.maxInflightRequests = maxInflightRequests;
+        this.maxConcurrentRequests = maxConcurrentRequests >= 0 ? Math.max(1, maxConcurrentRequests) : Integer.MAX_VALUE;
         this.compressionCodec = CompressionCodec.createCompressionCodec(
                 properties.getDataFormat(),
                 properties.getProperty("compression"),
@@ -105,7 +105,7 @@ public class Table {
         this.tableThrowable = new AtomicReference<>();
         this.loadParameters = LoadParameters.getParameters(properties);
         this.mergeCommitAsync = Boolean.parseBoolean(
-                loadParameters.getOrDefault(LoadParameters.MERGE_COMMIT_ASYNC, "false"));
+                loadParameters.getOrDefault(LoadParameters.MERGE_COMMIT_ASYNC, "true"));
         this.loadTimeoutMs = Integer.parseInt(
                 loadParameters.getOrDefault(TIMEOUT, String.valueOf(DEFAULT_TIMEOUT_SECONDS))) * 1000;
     }
@@ -151,7 +151,8 @@ public class Table {
             if (!wait) {
                 return;
             }
-            waitInflightRequests(0);
+            // wait until all inflight requests finished
+            waitInflightRequests(1);
         } finally {
             lock.unlock();
         }
@@ -212,9 +213,7 @@ public class Table {
     }
 
     private void flushChunk(Chunk chunk, FlushChunkReason reason) {
-        if (maxInflightRequests > 0) {
-            waitInflightRequests(maxInflightRequests);
-        }
+        waitInflightRequests(maxConcurrentRequests);
         LoadRequest request = new LoadRequest(this, chunk, maxRetries, retryIntervalInMs);
         inflightLoadRequests.put(chunk.getChunkId(), request);
         manager.onLoadStart(this, chunk.rowBytes(), chunk.numRows());
@@ -230,8 +229,8 @@ public class Table {
         final long timeoutNs = loadTimeoutMs >= 0
                 ? TimeUnit.MILLISECONDS.toNanos(loadTimeoutMs)
                 : Long.MAX_VALUE;
-        final long awakeTimeoutNs = TimeUnit.SECONDS.toNanos(5);
-        while (inflightLoadRequests.size() > threshold && tableThrowable.get() == null) {
+        final long awakeTimeoutNs = TimeUnit.SECONDS.toNanos(10);
+        while (inflightLoadRequests.size() >= threshold && tableThrowable.get() == null) {
             try {
                 long elapsedNs = System.nanoTime() - startTimeNs;
                 long remainingNs = timeoutNs - elapsedNs;
@@ -358,5 +357,13 @@ public class Table {
 
     public int getLoadTimeoutMs() {
         return loadTimeoutMs;
+    }
+
+    ReentrantLock getFlushLockForTest() {
+        return lock;
+    }
+
+    Condition getFlushConditionForTest() {
+        return flushCondition;
     }
 }

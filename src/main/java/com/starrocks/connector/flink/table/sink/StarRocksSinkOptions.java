@@ -26,6 +26,7 @@ import org.apache.flink.util.Preconditions;
 import com.starrocks.connector.flink.manager.StarRocksSinkTable;
 import com.starrocks.connector.flink.row.sink.StarRocksDelimiterParser;
 import com.starrocks.data.load.stream.StreamLoadDataFormat;
+import com.starrocks.data.load.stream.mergecommit.LoadParameters;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 import org.slf4j.Logger;
@@ -485,10 +486,10 @@ public class StarRocksSinkOptions implements Serializable {
     }
 
     private void validateMergeCommit() {
-        if (!"true".equalsIgnoreCase(streamLoadProps.get(MergeCommitOptions.ENABLE_MERGE_COMMIT))) {
+        if (!"true".equalsIgnoreCase(streamLoadProps.get(LoadParameters.ENABLE_MERGE_COMMIT))) {
             return;
         }
-        if (!streamLoadProps.containsKey(MergeCommitOptions.MERGE_COMMIT_INTERVAL_MS)) {
+        if (!streamLoadProps.containsKey(LoadParameters.MERGE_COMMIT_INTERVAL_MS)) {
             throw new IllegalArgumentException("Must set 'sink.properties.merge_commit_interval_ms' when " +
                     "'sink.properties.enable_merge_commit' is true");
         }

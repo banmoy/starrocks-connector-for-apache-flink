@@ -95,7 +95,7 @@ public class StreamLoadPropertiesTest {
                 .setHttpTotalMaxConnections(50)
                 .setHttpIdleConnectionTimeoutMs(30000)
                 .setNodeMetaUpdateIntervalMs(3000)
-                .setMaxInflightRequests(100)
+                .setMaxConcurrentRequests(100)
                 .setBackendDirectConnection(true)
                 .build();
 
@@ -104,7 +104,7 @@ public class StreamLoadPropertiesTest {
         assertEquals(50, props.getHttpTotalMaxConnections());
         assertEquals(30000, props.getHttpIdleConnectionTimeoutMs());
         assertEquals(3000, props.getNodeMetaUpdateIntervalMs());
-        assertEquals(100, props.getMaxInflightRequests());
+        assertEquals(100, props.getMaxConcurrentRequests());
         assertEquals(true, props.isBackendDirectConnection());
     }
 
@@ -117,7 +117,7 @@ public class StreamLoadPropertiesTest {
         assertEquals(30, props.getHttpTotalMaxConnections());
         assertEquals(60000, props.getHttpIdleConnectionTimeoutMs());
         assertEquals(2000, props.getNodeMetaUpdateIntervalMs());
-        assertEquals(-1, props.getMaxInflightRequests());
+        assertEquals(-1, props.getMaxConcurrentRequests());
         assertFalse(props.isBackendDirectConnection());
     }
 

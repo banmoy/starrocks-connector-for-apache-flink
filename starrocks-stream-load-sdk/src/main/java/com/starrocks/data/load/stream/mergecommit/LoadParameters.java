@@ -32,6 +32,8 @@ public class LoadParameters {
     public static final int DEFAULT_TIMEOUT_SECONDS = 600;
 
     public static final String ENABLE_MERGE_COMMIT = "enable_merge_commit";
+    public static final String MERGE_COMMIT_INTERVAL_MS = "merge_commit_interval_ms";
+    public static final String MERGE_COMMIT_PARALLEL = "merge_commit_parallel";
     public static final String MERGE_COMMIT_ASYNC = "merge_commit_async";
 
     public static Map<String, String> getParameters(StreamLoadTableProperties properties) {

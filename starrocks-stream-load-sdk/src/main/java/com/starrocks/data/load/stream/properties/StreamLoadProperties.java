@@ -102,7 +102,7 @@ public class StreamLoadProperties implements Serializable {
     private final int httpTotalMaxConnections;
     private final int httpIdleConnectionTimeoutMs;
     private final int nodeMetaUpdateIntervalMs;
-    private final int maxInflightRequests;
+    private final int maxConcurrentRequests;
     private final boolean backendDirectConnection;
     private final boolean blackhole;
 
@@ -148,7 +148,7 @@ public class StreamLoadProperties implements Serializable {
         this.httpTotalMaxConnections = builder.httpTotalMaxConnections;
         this.httpIdleConnectionTimeoutMs = builder.httpIdleConnectionTimeoutMs;
         this.nodeMetaUpdateIntervalMs = builder.nodeMetaUpdateIntervalMs;
-        this.maxInflightRequests = builder.maxInflightRequests;
+        this.maxConcurrentRequests = builder.maxConcurrentRequests;
         this.backendDirectConnection = builder.backendDirectConnection;
         this.blackhole = builder.blackhole;
     }
@@ -300,8 +300,8 @@ public class StreamLoadProperties implements Serializable {
         return nodeMetaUpdateIntervalMs;
     }
 
-    public int getMaxInflightRequests() {
-        return maxInflightRequests;
+    public int getMaxConcurrentRequests() {
+        return maxConcurrentRequests;
     }
 
     public boolean isBackendDirectConnection() {
@@ -357,7 +357,7 @@ public class StreamLoadProperties implements Serializable {
         private int httpTotalMaxConnections = 30;
         private int httpIdleConnectionTimeoutMs = 60000;
         private int nodeMetaUpdateIntervalMs = 2000;
-        private int maxInflightRequests = -1;
+        private int maxConcurrentRequests = -1;
         private boolean backendDirectConnection = false;
         private boolean blackhole = false;
 
@@ -570,8 +570,8 @@ public class StreamLoadProperties implements Serializable {
             return this;
         }
 
-        public Builder setMaxInflightRequests(int maxInflightRequests) {
-            this.maxInflightRequests = maxInflightRequests;
+        public Builder setMaxConcurrentRequests(int maxConcurrentRequests) {
+            this.maxConcurrentRequests = maxConcurrentRequests;
             return this;
         }
 

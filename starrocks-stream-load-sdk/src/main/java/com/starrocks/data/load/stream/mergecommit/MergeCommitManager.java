@@ -294,7 +294,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
                     StreamLoadUtils.getTableUniqueKey(database, tableName), database, tableName);
             table = new Table(database, tableName, this, mergeCommitLoader,
                     tableProperties, maxRetries, retryIntervalInMs, flushIntervalMs,
-                    properties.getDefaultTableProperties().getChunkLimit(), properties.getMaxInflightRequests());
+                    properties.getDefaultTableProperties().getChunkLimit(), properties.getMaxConcurrentRequests());
             tables.put(tableId, table);
         }
         return table;

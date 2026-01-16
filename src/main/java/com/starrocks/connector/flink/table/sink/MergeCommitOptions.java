@@ -34,6 +34,9 @@ import java.util.Map;
 import java.util.Optional;
 
 import static com.starrocks.connector.flink.table.sink.StarRocksSinkOptions.MEGA_BYTES_SCALE;
+import static com.starrocks.data.load.stream.mergecommit.LoadParameters.ENABLE_MERGE_COMMIT;
+import static com.starrocks.data.load.stream.mergecommit.LoadParameters.MERGE_COMMIT_ASYNC;
+import static com.starrocks.data.load.stream.mergecommit.LoadParameters.MERGE_COMMIT_PARALLEL;
 
 public class MergeCommitOptions {
 
@@ -43,8 +46,9 @@ public class MergeCommitOptions {
     private static final long DEFAULT_CHUNK_SIZE_FOR_OUT_OF_ORDER = 20 * MEGA_BYTES_SCALE;
     public static final ConfigOption<Long> CHUNK_SIZE =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "chunk.size").longType().noDefaultValue();
-    public static final ConfigOption<Integer> MAX_INFLIGHT_REQUESTS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-inflight-requests").intType().defaultValue(Integer.MAX_VALUE)
+    public static final ConfigOption<Integer> MAX_CONCURRENT_REQUESTS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "max-concurrent-requests").intType().defaultValue(Integer.MAX_VALUE)
+                    .withDeprecatedKeys(MERGE_COMMIT_PREFIX + "max-inflight-requests")
                     .withDescription("non-positive value ensures the order which is useful for primary key table");
     public static final ConfigOption<Integer> HTTP_THREAD_NUM =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.thread.num").intType().defaultValue(3);
@@ -68,11 +72,6 @@ public class MergeCommitOptions {
                     .withDescription("If not set, will use stream load timeout instead");
     public static final ConfigOption<Boolean> BACKEND_DIRECT_CONNECTION =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "backend-direct-connection").booleanType().defaultValue(false);
-
-    public static final String ENABLE_MERGE_COMMIT = "enable_merge_commit";
-    public static final String MERGE_COMMIT_INTERVAL_MS = "merge_commit_interval_ms";
-    public static final String MERGE_COMMIT_PARALLEL = "merge_commit_parallel";
-    public static final String MERGE_COMMIT_ASYNC = "merge_commit_async";
 
     public static List<ConfigOption<?>> getAllConfigOptions() {
         List<ConfigOption<?>> configOptions = new ArrayList<>();
@@ -103,7 +102,7 @@ public class MergeCommitOptions {
             if (!streamLoadProperties.containsKey(MERGE_COMMIT_ASYNC)) {
                 streamLoadProperties.put(MERGE_COMMIT_ASYNC, "true");
             }
-            int maxInflightRequests = options.get(MergeCommitOptions.MAX_INFLIGHT_REQUESTS);
+            int maxInflightRequests = options.get(MergeCommitOptions.MAX_CONCURRENT_REQUESTS);
             Optional<Long> optionalChunkSize = options.getOptional(MergeCommitOptions.CHUNK_SIZE);
             if (optionalChunkSize.isPresent()) {
                 defaultTablePropertiesBuilder.chunkLimit(optionalChunkSize.get());
@@ -121,7 +120,7 @@ public class MergeCommitOptions {
                     .setHttpTotalMaxConnections(options.get(HTTP_TOTAL_MAX_CONNECTIONS))
                     .setHttpIdleConnectionTimeoutMs(options.get(HTTP_IDLE_CONNECTION_TIMEOUT_MS))
                     .setNodeMetaUpdateIntervalMs(options.get(NODE_META_UPDATE_INTERVAL_MS))
-                    .setMaxInflightRequests(options.get(MAX_INFLIGHT_REQUESTS))
+                    .setMaxConcurrentRequests(options.get(MAX_CONCURRENT_REQUESTS))
                     .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION))
                     .maxRetries(maxRetries);
             options.getOptional(CHECK_LABEL_STATE_TIMEOUT_MS).ifPresent(streamLoadPropertiesBuilder::setCheckLabelStateTimeoutMs);
