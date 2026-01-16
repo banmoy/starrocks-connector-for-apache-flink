@@ -52,14 +52,11 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    private static final int DEFAULT_FLUSH_TIMEOUT_MS = 180000;
-
     private final StreamLoadProperties properties;
     private final MergeCommitLoader mergeCommitLoader;
     private final int maxRetries;
     private final int retryIntervalInMs;
     private final int flushIntervalMs;
-    private final int flushTimeoutMs;
     private final long maxCacheBytes;
     private final long maxWriteBlockCacheBytes;
     private final Map<TableId, Table> tables = new ConcurrentHashMap<>();
@@ -78,8 +75,6 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
         this.maxRetries = properties.getMaxRetries();
         this.retryIntervalInMs = properties.getRetryIntervalInMs();
         this.flushIntervalMs = (int) properties.getExpectDelayTime();
-        String timeout = properties.getHeaders().get("timeout");
-        this.flushTimeoutMs = timeout != null ? Integer.parseInt(timeout) * 1000 : DEFAULT_FLUSH_TIMEOUT_MS;
         this.maxCacheBytes = properties.getMaxCacheBytes();
         this.maxWriteBlockCacheBytes = 2 * maxCacheBytes;
         this.exception = new AtomicReference<>();
@@ -298,7 +293,7 @@ public class MergeCommitManager implements StreamLoadManager, Serializable {
             StreamLoadTableProperties tableProperties = properties.getTableProperties(
                     StreamLoadUtils.getTableUniqueKey(database, tableName), database, tableName);
             table = new Table(database, tableName, this, mergeCommitLoader,
-                    tableProperties, maxRetries, retryIntervalInMs, flushIntervalMs, flushTimeoutMs,
+                    tableProperties, maxRetries, retryIntervalInMs, flushIntervalMs,
                     properties.getDefaultTableProperties().getChunkLimit(), properties.getMaxInflightRequests());
             tables.put(tableId, table);
         }

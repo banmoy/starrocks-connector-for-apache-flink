@@ -56,12 +56,16 @@ public class MergeCommitOptions {
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "http.idle-connection-timeout-ms").intType().defaultValue(60000);
     public static final ConfigOption<Integer> NODE_META_UPDATE_INTERVAL_MS =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "node-meta.update-interval-ms").intType().defaultValue(5000);
-    public static final ConfigOption<Integer> CHECK_STATE_INIT_DELAY_MS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.init-delay-ms").intType().defaultValue(500);
-    public static final ConfigOption<Integer> CHECK_STATE_INTERVAL_MS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.interval-ms").intType().defaultValue(500);
-    public static final ConfigOption<Integer> CHECK_STATE_TIMEOUT_MS =
-            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-state.timeout-ms").intType().defaultValue(60000);
+    public static final ConfigOption<Integer> CHECK_LABEL_STATE_INIT_DELAY_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-label-state.init-delay-ms").intType().defaultValue(500)
+                    .withDeprecatedKeys(MERGE_COMMIT_PREFIX + "check-state.init-delay-ms");
+    public static final ConfigOption<Integer> CHECK_LABEL_STATE_INTERVAL_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-label-state.interval-ms").intType().defaultValue(500)
+                    .withDeprecatedKeys(MERGE_COMMIT_PREFIX + "check-state.interval-ms");
+    public static final ConfigOption<Integer> CHECK_LABEL_STATE_TIMEOUT_MS =
+            ConfigOptions.key(MERGE_COMMIT_PREFIX + "check-label-state.timeout-ms").intType().noDefaultValue()
+                    .withDeprecatedKeys(MERGE_COMMIT_PREFIX + "check-state.timeout-ms")
+                    .withDescription("If not set, will use stream load timeout instead");
     public static final ConfigOption<Boolean> BACKEND_DIRECT_CONNECTION =
             ConfigOptions.key(MERGE_COMMIT_PREFIX + "backend-direct-connection").booleanType().defaultValue(false);
 
@@ -108,11 +112,10 @@ public class MergeCommitOptions {
                 defaultTablePropertiesBuilder.chunkLimit(chunkSize);
             }
 
-            // set reties to 0 to release memory as soon as possible and improve performance
+            // set reties to 0 by default to release memory as soon as possible and improve performance
             int maxRetries = options.getOptional(StarRocksSinkOptions.SINK_MAX_RETRIES).orElse(0);
-            streamLoadPropertiesBuilder.setCheckLabelInitDelayMs(options.get(CHECK_STATE_INIT_DELAY_MS))
-                    .setCheckLabelIntervalMs(options.get(CHECK_STATE_INTERVAL_MS))
-                    .setCheckLabelTimeoutMs(options.get(CHECK_STATE_TIMEOUT_MS))
+            streamLoadPropertiesBuilder.setCheckLabelStateInitDelayMs(options.get(CHECK_LABEL_STATE_INIT_DELAY_MS))
+                    .setCheckLabelStateIntervalMs(options.get(CHECK_LABEL_STATE_INTERVAL_MS))
                     .setHttpThreadNum(options.get(HTTP_THREAD_NUM))
                     .setHttpMaxConnectionsPerRoute(options.get(HTTP_MAX_CONNECTIONS))
                     .setHttpTotalMaxConnections(options.get(HTTP_TOTAL_MAX_CONNECTIONS))
@@ -121,6 +124,7 @@ public class MergeCommitOptions {
                     .setMaxInflightRequests(options.get(MAX_INFLIGHT_REQUESTS))
                     .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION))
                     .maxRetries(maxRetries);
+            options.getOptional(CHECK_LABEL_STATE_TIMEOUT_MS).ifPresent(streamLoadPropertiesBuilder::setCheckLabelStateTimeoutMs);
         }
     }
 }

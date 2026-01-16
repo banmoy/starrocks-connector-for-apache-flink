@@ -42,8 +42,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -303,21 +303,23 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
         LoadRequest request = requestRun.loadRequest;
         Table table = request.getTable();
         StreamLoadResponse loadResponse = requestRun.loadResult;
-        long leftTimeMs = loadResponse.getBody().getLeftTimeMs() == null ? -1 :
-                loadResponse.getBody().getLeftTimeMs() + properties.getCheckLabelInitDelayMs();
-        CompletableFuture<LabelStateService.LabelMeta> future =
-                feMetaService.getLabelStateService()
-                        .get().getFinalStatus(
-                                TableId.of(table.getDatabase(), table.getTable()),
-                                loadResponse.getBody().getLabel(),
-                                (int) leftTimeMs,
-                                properties.getCheckLabelIntervalMs(),
-                                properties.getCheckLabelTimeoutMs())
-                        .whenCompleteAsync(
-                                (labelMeta, throwable)
-                                        -> completeAsyncMode(requestRun, labelMeta, throwable),
-                                executorService);
-        requestRun.labelFuture = future;
+        Optional<Long> mergeLeftTimeMs = Optional.ofNullable(loadResponse.getBody().getLeftTimeMs());
+        int scheduleDelayMs = mergeLeftTimeMs.map(
+                time -> time.intValue() + properties.getCheckLabelStateInitDelayMs()).orElse(-1);
+        int scheduleTimeoutMs = properties.getCheckLabelStateTimeoutMs() <= 0 ?
+                table.getLoadTimeoutMs() :
+                mergeLeftTimeMs.map(Long::intValue).orElse(0) + properties.getCheckLabelStateTimeoutMs();
+        requestRun.labelFuture = feMetaService.getLabelStateService()
+                .get().getFinalStatus(
+                        TableId.of(table.getDatabase(), table.getTable()),
+                        loadResponse.getBody().getLabel(),
+                        scheduleDelayMs,
+                        properties.getCheckLabelStateIntervalMs(),
+                        scheduleTimeoutMs)
+                .whenCompleteAsync(
+                        (labelMeta, throwable)
+                                -> completeAsyncMode(requestRun, labelMeta, throwable),
+                        executorService);
     }
 
     private void completeAsyncMode(LoadRequest.RequestRun requestRun,

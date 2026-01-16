@@ -44,6 +44,7 @@ public class RequestStat {
         this.windowSizeMs = windowSizeMs;
         this.logger = logger;
         this.startTimeMs = System.currentTimeMillis();
+        this.lastWindowStartMs.set(startTimeMs);
     }
 
     public void addRequest(long latencyNs) {

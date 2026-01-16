@@ -34,26 +34,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static com.starrocks.data.load.stream.mergecommit.LoadParameters.DEFAULT_TIMEOUT_SECONDS;
+import static com.starrocks.data.load.stream.mergecommit.LoadParameters.TIMEOUT;
+
 public class Table {
 
     private static final Logger LOG = LoggerFactory.getLogger(Table.class);
 
     enum FlushChunkReason {
-
-        CHUNK_FULL (false),
-        CHUNK_DELAY (true),
-        CACHE_EVICT(true),
-        FLUSH (true);
-
-        boolean force;
-
-        FlushChunkReason(boolean force) {
-            this.force = force;
-        }
-
-        boolean isForce() {
-            return force;
-        }
+        CHUNK_FULL,
+        CHUNK_DELAY,
+        CACHE_EVICT,
+        FLUSH
     }
 
     private final String database;
@@ -64,7 +56,6 @@ public class Table {
     private final int maxRetries;
     private final int retryIntervalInMs;
     private final int flushIntervalMs;
-    private final int flushTimeoutMs;
     private final long chunkSize;
     private final int maxInflightRequests;
     private final Optional<CompressionCodec> compressionCodec;
@@ -80,6 +71,7 @@ public class Table {
     private final AtomicReference<Throwable> tableThrowable;
     private final Map<String, String> loadParameters;
     private final boolean mergeCommitAsync;
+    private final int loadTimeoutMs;
 
     public Table(
             String database,
@@ -90,7 +82,6 @@ public class Table {
             int maxRetries,
             int retryIntervalInMs,
             int flushIntervalMs,
-            int flushTimeoutMs,
             long chunkSize,
             int maxInflightRequests) {
         this.database = database;
@@ -101,7 +92,6 @@ public class Table {
         this.maxRetries = maxRetries;
         this.retryIntervalInMs = retryIntervalInMs;
         this.flushIntervalMs = flushIntervalMs;
-        this.flushTimeoutMs = flushTimeoutMs;
         this.chunkSize = chunkSize;
         this.maxInflightRequests = maxInflightRequests;
         this.compressionCodec = CompressionCodec.createCompressionCodec(
@@ -114,8 +104,10 @@ public class Table {
         this.flushCondition = lock.newCondition();
         this.tableThrowable = new AtomicReference<>();
         this.loadParameters = LoadParameters.getParameters(properties);
-        this.mergeCommitAsync = loadParameters.containsKey(LoadParameters.HTTP_BATCH_WRITE_ASYNC)
-                && Boolean.parseBoolean(loadParameters.get(LoadParameters.HTTP_BATCH_WRITE_ASYNC));
+        this.mergeCommitAsync = Boolean.parseBoolean(
+                loadParameters.getOrDefault(LoadParameters.MERGE_COMMIT_ASYNC, "false"));
+        this.loadTimeoutMs = Integer.parseInt(
+                loadParameters.getOrDefault(TIMEOUT, String.valueOf(DEFAULT_TIMEOUT_SECONDS))) * 1000;
     }
 
     public String getDatabase() {
@@ -235,8 +227,8 @@ public class Table {
     private void waitInflightRequests(int threshold) {
         final long startTimeMs = System.currentTimeMillis();
         final long startTimeNs = System.nanoTime();
-        final long timeoutNs = flushTimeoutMs > 0
-                ? TimeUnit.MILLISECONDS.toNanos(flushTimeoutMs)
+        final long timeoutNs = loadTimeoutMs >= 0
+                ? TimeUnit.MILLISECONDS.toNanos(loadTimeoutMs)
                 : Long.MAX_VALUE;
         final long awakeTimeoutNs = TimeUnit.SECONDS.toNanos(5);
         while (inflightLoadRequests.size() > threshold && tableThrowable.get() == null) {
@@ -247,7 +239,7 @@ public class Table {
                     RuntimeException timeoutEx = new RuntimeException(String.format(
                             "Flush timeout when waiting inflight requests, db: %s, table: %s, " +
                                     "elapsed: %d ms, timeout: %d ms, current inflight requests: %d, target size: %d",
-                            database, table, System.currentTimeMillis() - startTimeMs, flushTimeoutMs,
+                            database, table, System.currentTimeMillis() - startTimeMs, loadTimeoutMs,
                             inflightLoadRequests.size(), threshold));
                     tableThrowable.compareAndSet(null, timeoutEx);
                     throw timeoutEx;
@@ -258,7 +250,7 @@ public class Table {
                     LOG.info("Waiting inflight requests, db: {}, table: {}, current inflight requests: {}," +
                             " target size: {}, elapsed: {} ms, timeout: {} ms, {}", database, table,
                             inflightLoadRequests.size(), threshold, System.currentTimeMillis() - startTimeMs,
-                            flushTimeoutMs, loadRequestsSummary());
+                            loadTimeoutMs, loadRequestsSummary());
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -362,5 +354,9 @@ public class Table {
             count += 1;
         }
         return builder.toString();
+    }
+
+    public int getLoadTimeoutMs() {
+        return loadTimeoutMs;
     }
 }

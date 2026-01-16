@@ -25,6 +25,7 @@ import com.starrocks.data.load.stream.StreamLoadManager;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.StreamLoadSnapshot;
 import com.starrocks.data.load.stream.StreamLoader;
+import com.starrocks.data.load.stream.mergecommit.LoadParameters;
 import com.starrocks.data.load.stream.mergecommit.MergeCommitManager;
 import com.starrocks.data.load.stream.mergecommit.MetricListener;
 import com.starrocks.data.load.stream.properties.StreamLoadProperties;
@@ -37,7 +38,7 @@ public class StreamLoadManagerV2 implements StreamLoadManager, Serializable {
 
     public StreamLoadManagerV2(StreamLoadProperties properties, boolean enableAutoCommit) {
         boolean enableMergeCommit = properties.getHeaders()
-                .getOrDefault("enable_merge_commit", "false").equalsIgnoreCase("true");
+                .getOrDefault(LoadParameters.ENABLE_MERGE_COMMIT, "false").equalsIgnoreCase("true");
         this.delegateManager = enableMergeCommit ? new MergeCommitManager(properties)
                 : new DefaultStreamLoadManager(properties, enableAutoCommit);
     }

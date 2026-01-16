@@ -94,9 +94,9 @@ public class StreamLoadProperties implements Serializable {
     private final boolean sanitizeErrorLog;
 
     // options for merge commit ============================
-    private final int checkLabelInitDelayMs;
-    private final int checkLabelIntervalMs;
-    private final int checkLabelTimeoutMs;
+    private final int checkLabelStateInitDelayMs;
+    private final int checkLabelStateIntervalMs;
+    private final int checkLabelStateTimeoutMs;
     private final int httpThreadNum;
     private final int httpMaxConnectionsPerRoute;
     private final int httpTotalMaxConnections;
@@ -140,9 +140,9 @@ public class StreamLoadProperties implements Serializable {
 
         this.headers = Collections.unmodifiableMap(builder.headers);
         this.sanitizeErrorLog = builder.sanitizeErrorLog;
-        this.checkLabelInitDelayMs = builder.checkLabelInitDelayMs;
-        this.checkLabelIntervalMs = builder.checkLabelIntervalMs;
-        this.checkLabelTimeoutMs = builder.checkLabelTimeoutMs;
+        this.checkLabelStateInitDelayMs = builder.checkLabelStateInitDelayMs;
+        this.checkLabelStateIntervalMs = builder.checkLabelStateIntervalMs;
+        this.checkLabelStateTimeoutMs = builder.checkLabelStateTimeoutMs;
         this.httpThreadNum = builder.httpThreadNum;
         this.httpMaxConnectionsPerRoute = builder.httpMaxConnectionsPerRoute;
         this.httpTotalMaxConnections = builder.httpTotalMaxConnections;
@@ -268,16 +268,16 @@ public class StreamLoadProperties implements Serializable {
         return sanitizeErrorLog;
     }
 
-    public int getCheckLabelInitDelayMs() {
-        return checkLabelInitDelayMs;
+    public int getCheckLabelStateInitDelayMs() {
+        return checkLabelStateInitDelayMs;
     }
 
-    public int getCheckLabelIntervalMs() {
-        return checkLabelIntervalMs;
+    public int getCheckLabelStateIntervalMs() {
+        return checkLabelStateIntervalMs;
     }
 
-    public int getCheckLabelTimeoutMs() {
-        return checkLabelTimeoutMs;
+    public int getCheckLabelStateTimeoutMs() {
+        return checkLabelStateTimeoutMs;
     }
 
     public int getHttpThreadNum() {
@@ -347,16 +347,17 @@ public class StreamLoadProperties implements Serializable {
         private int maxRetries = 0;
         private int retryIntervalInMs = 10000;
         private Map<String, String> headers = new HashMap<>();
-        private int checkLabelInitDelayMs = 300;
-        private int checkLabelIntervalMs = 200;
-        private int checkLabelTimeoutMs = 60000;
+
+        // merge commit options
+        private int checkLabelStateInitDelayMs = 500;
+        private int checkLabelStateIntervalMs = 500;
+        private int checkLabelStateTimeoutMs = -1;
         private int httpThreadNum = 3;
         private int httpMaxConnectionsPerRoute = 3;
         private int httpTotalMaxConnections = 30;
         private int httpIdleConnectionTimeoutMs = 60000;
         private int nodeMetaUpdateIntervalMs = 2000;
         private int maxInflightRequests = -1;
-        private String protocol = "http";
         private boolean backendDirectConnection = false;
         private boolean blackhole = false;
 
@@ -529,18 +530,18 @@ public class StreamLoadProperties implements Serializable {
             return this;
         }
 
-        public Builder setCheckLabelInitDelayMs(int checkLabelInitDelayMs) {
-            this.checkLabelInitDelayMs = checkLabelInitDelayMs;
+        public Builder setCheckLabelStateInitDelayMs(int checkLabelStateInitDelayMs) {
+            this.checkLabelStateInitDelayMs = checkLabelStateInitDelayMs;
             return this;
         }
 
-        public Builder setCheckLabelIntervalMs(int checkLabelIntervalMs) {
-            this.checkLabelIntervalMs = checkLabelIntervalMs;
+        public Builder setCheckLabelStateIntervalMs(int checkLabelStateIntervalMs) {
+            this.checkLabelStateIntervalMs = checkLabelStateIntervalMs;
             return this;
         }
 
-        public Builder setCheckLabelTimeoutMs(int checkLabelTimeoutMs) {
-            this.checkLabelTimeoutMs = checkLabelTimeoutMs;
+        public Builder setCheckLabelStateTimeoutMs(int checkLabelStateTimeoutMs) {
+            this.checkLabelStateTimeoutMs = checkLabelStateTimeoutMs;
             return this;
         }
 
@@ -571,11 +572,6 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder setMaxInflightRequests(int maxInflightRequests) {
             this.maxInflightRequests = maxInflightRequests;
-            return this;
-        }
-
-        public Builder setProtocol(String protocol) {
-            this.protocol = protocol;
             return this;
         }
 
