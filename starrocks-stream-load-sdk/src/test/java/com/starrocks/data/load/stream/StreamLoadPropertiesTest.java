@@ -136,4 +136,20 @@ public class StreamLoadPropertiesTest {
 
         assertFalse(props.isBlackhole());
     }
+
+    @Test
+    public void testPublishTimeoutMsDefaultValue() {
+        StreamLoadProperties props = createBaseBuilder().build();
+
+        assertEquals(-1, props.getPublishTimeoutMs());
+    }
+
+    @Test
+    public void testSetPublishTimeoutMs() {
+        StreamLoadProperties props = createBaseBuilder()
+                .setPublishTimeoutMs(10000)
+                .build();
+
+        assertEquals(10000, props.getPublishTimeoutMs());
+    }
 }

@@ -21,19 +21,12 @@
 package com.starrocks.data.load.stream.mergecommit.fe;
 
 import com.starrocks.data.load.stream.mergecommit.SharedService;
-import com.starrocks.data.load.stream.mergecommit.TableId;
-import com.starrocks.data.load.stream.mergecommit.WorkerAddress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -141,43 +134,5 @@ public class FeMetaService extends SharedService {
         public DefaultFeHttpService.Config httpServiceConfig;
         public NodesStateService.Config nodesStateServiceConfig;
         public int numThreads = 3;
-    }
-
-    public static void main(String[] args) throws Exception {
-        DefaultFeHttpService.Config httpConfig = new DefaultFeHttpService.Config();
-        httpConfig.username = "root";
-        httpConfig.password = "";
-        httpConfig.candidateHosts = Arrays.asList("http://127.0.0.1:11901", "http://127.0.0.1:11901");
-
-        NodesStateService.Config nodesConfig = new NodesStateService.Config();
-        nodesConfig.updateIntervalMs = 2000;
-
-        Config config = new Config();
-        config.httpServiceConfig = httpConfig;
-        config.nodesStateServiceConfig = nodesConfig;
-        config.numThreads = 3;
-        FeMetaService service = FeMetaService.getInstance(config);
-        service.takeRef();
-
-        TableId tableId = TableId.of("test", "tbl");
-        CompletableFuture<LabelStateService.LabelMeta> future1 =
-                service.getLabelStateService().get().getFinalStatus(tableId, "insert_1bd3005b-a559-11ef-b5ea-5e0024ae5de7",
-                        1000, 1000, 10000);
-        CompletableFuture<LabelStateService.LabelMeta> future2 =
-                service.getLabelStateService().get().getFinalStatus(tableId, "insert_test_label",
-                        1000, 1000, 10000);
-        System.out.println(future1.get().transactionStatus);
-        System.out.println(future2.get().transactionStatus);
-
-        Map<String, String> loadParams = new HashMap<>();
-        loadParams.put("format", "csv");
-        loadParams.put("enable_merge_commit", "true");
-        loadParams.put("merge_commit_interval_ms", "1000");
-        loadParams.put("merge_commit_async", "true");
-        loadParams.put("merge_commit_parallel", "2");
-        Future<WorkerAddress> future3 = service.getNodesStateService().get().getHttpAddress(tableId, loadParams);
-        Future<WorkerAddress> future4 = service.getNodesStateService().get().getBrpcAddress(tableId, loadParams);
-        System.out.printf("http: %s, brpc: %s%n", future3.get(), future4.get());
-        service.releaseRef();
     }
 }

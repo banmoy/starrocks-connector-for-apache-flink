@@ -240,7 +240,8 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             StreamLoadResponse streamLoadResponse = new StreamLoadResponse();
             streamLoadResponse.setBody(streamLoadBody);
             String status = streamLoadBody.getStatus();
-            if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)) {
+            if (StreamLoadConstants.RESULT_STATUS_SUCCESS.equals(status)
+                    || StreamLoadConstants.RESULT_STATUS_TRANSACTION_PUBLISH_TIMEOUT.equals(status)) {
                 requestRun.loadResult = streamLoadResponse;
                 if (streamLoadBody.getLabel() == null || streamLoadBody.getLabel().isEmpty()) {
                     throw new StreamLoadFailException(String.format("Load rpc response success with an empty label, " +
@@ -310,12 +311,13 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
                 table.getLoadTimeoutMs() :
                 mergeLeftTimeMs.map(Long::intValue).orElse(0) + properties.getCheckLabelStateTimeoutMs();
         requestRun.labelFuture = feMetaService.getLabelStateService()
-                .get().getFinalStatus(
+                .get().waitForLabelFinalState(
                         TableId.of(table.getDatabase(), table.getTable()),
                         loadResponse.getBody().getLabel(),
                         scheduleDelayMs,
                         properties.getCheckLabelStateIntervalMs(),
-                        scheduleTimeoutMs)
+                        scheduleTimeoutMs,
+                        properties.getPublishTimeoutMs())
                 .whenCompleteAsync(
                         (labelMeta, throwable)
                                 -> completeAsyncMode(requestRun, labelMeta, throwable),
@@ -337,7 +339,7 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
         requestRun.labelHttpCostMs = labelMeta.getHttpCostMs();
         requestRun.labelPendingCostMs = labelMeta.getPendingCostMs();
 
-        if (status != TransactionStatus.VISIBLE) {
+        if (status != TransactionStatus.VISIBLE && status != TransactionStatus.COMMITTED) {
             loadRequest.getTable().loadFinish(
                     requestRun,
                     new RuntimeException(String.format(

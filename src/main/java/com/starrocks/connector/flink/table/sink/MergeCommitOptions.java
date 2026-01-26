@@ -42,6 +42,7 @@ public class MergeCommitOptions {
 
     public static final String MERGE_COMMIT_PREFIX = "sink.merge-commit.";
 
+    private static final int DEFAULT_PUBLISH_TIMEOUT_MS = 10000;
     private static final long DEFAULT_CHUNK_SIZE_FOR_IN_ORDER = 500 * MEGA_BYTES_SCALE;
     private static final long DEFAULT_CHUNK_SIZE_FOR_OUT_OF_ORDER = 20 * MEGA_BYTES_SCALE;
     public static final ConfigOption<Long> CHUNK_SIZE =
@@ -124,6 +125,8 @@ public class MergeCommitOptions {
                     .setBackendDirectConnection(options.get(BACKEND_DIRECT_CONNECTION))
                     .maxRetries(maxRetries);
             options.getOptional(CHECK_LABEL_STATE_TIMEOUT_MS).ifPresent(streamLoadPropertiesBuilder::setCheckLabelStateTimeoutMs);
+            int publishTimeoutMs = options.getOptional(StarRocksSinkOptions.SINK_PUBLISH_TIMEOUT).orElse(DEFAULT_PUBLISH_TIMEOUT_MS);
+            streamLoadPropertiesBuilder.setPublishTimeoutMs(publishTimeoutMs);
         }
     }
 }

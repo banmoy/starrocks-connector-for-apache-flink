@@ -105,6 +105,7 @@ public class StreamLoadProperties implements Serializable {
     private final int maxConcurrentRequests;
     private final boolean backendDirectConnection;
     private final boolean blackhole;
+    private final int publishTimeoutMs;
 
     private StreamLoadProperties(Builder builder) {
         this.jdbcUrl = builder.jdbcUrl;
@@ -151,6 +152,7 @@ public class StreamLoadProperties implements Serializable {
         this.maxConcurrentRequests = builder.maxConcurrentRequests;
         this.backendDirectConnection = builder.backendDirectConnection;
         this.blackhole = builder.blackhole;
+        this.publishTimeoutMs = builder.publishTimeoutMs;
     }
 
     public boolean isEnableTransaction() {
@@ -312,6 +314,10 @@ public class StreamLoadProperties implements Serializable {
         return blackhole;
     }
 
+    public int getPublishTimeoutMs() {
+        return publishTimeoutMs;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -360,6 +366,7 @@ public class StreamLoadProperties implements Serializable {
         private int maxConcurrentRequests = -1;
         private boolean backendDirectConnection = false;
         private boolean blackhole = false;
+        private int publishTimeoutMs = -1;
 
         private boolean sanitizeErrorLog = false;
 
@@ -582,6 +589,11 @@ public class StreamLoadProperties implements Serializable {
 
         public Builder setBlackhole(boolean blackhole) {
             this.blackhole = blackhole;
+            return this;
+        }
+
+        public Builder setPublishTimeoutMs(int publishTimeoutMs) {
+            this.publishTimeoutMs = publishTimeoutMs;
             return this;
         }
 

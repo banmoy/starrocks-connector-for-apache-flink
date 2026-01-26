@@ -31,13 +31,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -92,8 +89,9 @@ public class LabelStateService implements Closeable {
         LOG.info("Close label meta service");
     }
 
-    public CompletableFuture<LabelMeta> getFinalStatus(
-            TableId tableId, String label, int scheduleDelayMs, int scheduleIntervalMs, int timeoutMs) {
+    public CompletableFuture<LabelMeta> waitForLabelFinalState(
+            TableId tableId, String label, int scheduleDelayMs, int scheduleIntervalMs,
+            int checkLabelStateTimeoutMs, int publishTimeoutMs) {
         lock.readLock().lock();
         try {
          if (closed) {
@@ -103,14 +101,14 @@ public class LabelStateService implements Closeable {
          }
          LabelId labelId = new LabelId(tableId.db, label);
          LabelMeta labelMeta = labelMetas
-              .computeIfAbsent(labelId, key -> new LabelMeta(tableId, label, scheduleDelayMs, scheduleIntervalMs, timeoutMs));
+              .computeIfAbsent(labelId, key -> new LabelMeta(tableId, label, scheduleDelayMs, scheduleIntervalMs, checkLabelStateTimeoutMs, publishTimeoutMs));
           if (labelMeta.isScheduled.compareAndSet(false, true)) {
               labelMeta.lastScheduleTimeNs = System.nanoTime();
               executorService.schedule(()
                                                   -> checkLabelState(labelMeta),
                                               Math.max(0, labelMeta.scheduleDelayMs),
                                               TimeUnit.MILLISECONDS);
-            LOG.debug("Get label final status, db: {}, table: {}, label: {}, delay: {} ms",
+            LOG.debug("Wait for label final state, db: {}, table: {}, label: {}, delay: {} ms",
                     tableId.db, tableId.table, label, scheduleDelayMs);
           }
           return labelMeta.future;
@@ -151,6 +149,25 @@ public class LabelStateService implements Closeable {
                   labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, costMs,
                   labelMeta.requestCount, status, response.reason);
               return;
+            } else if (status == TransactionStatus.COMMITTED) {
+                // Track when first entered COMMITTED status
+                if (labelMeta.commitTimeMs < 0) {
+                    labelMeta.commitTimeMs = System.currentTimeMillis();
+                }
+                // Check if COMMITTED timeout exceeded
+                if (labelMeta.publishTimeoutMs > 0 &&
+                    System.currentTimeMillis() - labelMeta.commitTimeMs >= labelMeta.publishTimeoutMs) {
+                    labelMeta.finishTimeMs = System.currentTimeMillis();
+                    labelMeta.transactionStatus = TransactionStatus.COMMITTED;
+                    labelMeta.reason = response.reason;
+                    labelMeta.future.complete(labelMeta);
+                    long costMs = labelMeta.finishTimeMs - labelMeta.createTimeMs;
+                    LOG.info(
+                        "Label publish timeout, complete with COMMITTED status, db: {}, table: {}, label: {}, cost: {}ms, count: {}, publishTimeoutMs: {}",
+                        labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, costMs,
+                        labelMeta.requestCount, labelMeta.publishTimeoutMs);
+                    return;
+                }
             }
             LOG.debug(
                 "Label is not in final status, db: {}, table: {}, label: {}, status: {}, reason: {}",
@@ -171,12 +188,12 @@ public class LabelStateService implements Closeable {
             return;
         }
 
-        if (System.currentTimeMillis() - labelMeta.createTimeMs >= labelMeta.timeoutMs) {
+        if (System.currentTimeMillis() - labelMeta.createTimeMs >= labelMeta.checkLabelStateTimeoutMs) {
             labelMeta.finishTimeMs = System.currentTimeMillis();
             labelMeta.future.completeExceptionally(new RuntimeException(
-                    String.format("Get label state timeout, label: %s, timeout: %sms", labelMeta.label, labelMeta.timeoutMs)));
+                    String.format("Check label state timeout, label: %s, timeout: %sms", labelMeta.label, labelMeta.checkLabelStateTimeoutMs)));
             LOG.error("Failed to retry to get label state because of timeout, db: {}, table: {}, label: {}, timeout: {}ms",
-                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.timeoutMs);
+                    labelMeta.tableId.db, labelMeta.tableId.table, labelMeta.label, labelMeta.checkLabelStateTimeoutMs);
             return;
         }
 
@@ -251,7 +268,8 @@ public class LabelStateService implements Closeable {
       String label;
       int scheduleDelayMs;
       int scheduleIntervalMs;
-      int timeoutMs;
+      int checkLabelStateTimeoutMs;
+      int publishTimeoutMs;
       CompletableFuture<LabelMeta> future;
       AtomicBoolean isScheduled;
       final long createTimeMs;
@@ -260,17 +278,19 @@ public class LabelStateService implements Closeable {
       volatile long pendingTimeNs = 0;
       volatile long finishTimeMs;
       volatile long lastScheduleTimeNs;
+      volatile long commitTimeMs = -1;  // Track when status first became COMMITTED
 
       public volatile TransactionStatus transactionStatus;
       public volatile String reason;
 
       LabelMeta(TableId tableId, String label, int scheduleDelayMs,
-                int scheduleIntervalMs, int timeoutMs) {
+                int scheduleIntervalMs, int checkLabelStateTimeoutMs, int publishTimeoutMs) {
         this.tableId = tableId;
         this.label = label;
         this.scheduleDelayMs = scheduleDelayMs;
         this.scheduleIntervalMs = scheduleIntervalMs;
-        this.timeoutMs = timeoutMs;
+        this.checkLabelStateTimeoutMs = checkLabelStateTimeoutMs;
+        this.publishTimeoutMs = publishTimeoutMs;
         this.future = new CompletableFuture<>();
         this.isScheduled = new AtomicBoolean(false);
         this.createTimeMs = System.currentTimeMillis();
@@ -291,37 +311,5 @@ public class LabelStateService implements Closeable {
       public long getPendingCostMs() {
           return pendingTimeNs / 1000000;
       }
-    }
-
-    public static void main(String[] args) throws Exception {
-        DefaultFeHttpService.Config config = new DefaultFeHttpService.Config();
-        config.username = "root";
-        config.password = "";
-        config.candidateHosts = Arrays.asList("http://127.0.0.1:11901", "http://127.0.0.1:11901");
-
-        DefaultFeHttpService httpService = new DefaultFeHttpService(config);
-        httpService.start();
-        ScheduledExecutorService executorService = Executors.newScheduledThreadPool(
-                100,
-                r -> {
-                    Thread thread = new Thread(null, r, "FeMetaService-" + UUID.randomUUID());
-                    thread.setDaemon(true);
-                    return thread;
-                }
-        );
-        try (LabelStateService metaService = new LabelStateService(httpService, executorService)) {
-            metaService.start();
-            TableId tableId = TableId.of("test", "tbl");
-            CompletableFuture<LabelMeta> future1 =
-                    metaService.getFinalStatus(tableId, "insert_1bd3005b-a559-11ef-b5ea-5e0024ae5de7",
-                            1000, 1000, 10000);
-            CompletableFuture<LabelMeta> future2 =
-                    metaService.getFinalStatus(tableId, "insert_test_label",
-                            1000, 1000, 10000);
-            LabelMeta meta1 = future1.get();
-            LabelMeta meta2 = future2.get();
-            System.out.println(meta1.transactionStatus);
-            System.out.println(meta2.transactionStatus);
-        }
     }
 }
