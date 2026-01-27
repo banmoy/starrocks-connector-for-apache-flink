@@ -623,6 +623,7 @@ public class StarRocksSinkOptions implements Serializable {
                 .maxRetries(0)
                 .retryIntervalInMs(getRetryIntervalMs())
                 .sanitizeErrorLog(isSanitizeErrorLog())
+                .setPublishTimeoutMs(getPublishTimeoutMs())
                 .setBlackhole(isBlackhole());
         MergeCommitOptions.buildMergeCommitOptions(tableOptions, streamLoadProperties, defaultTablePropertiesBuilder, builder);
         defaultTablePropertiesBuilder.addCommonProperties(streamLoadProperties);
