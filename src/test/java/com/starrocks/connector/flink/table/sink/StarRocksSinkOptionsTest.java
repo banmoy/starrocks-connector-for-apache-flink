@@ -21,8 +21,6 @@ package com.starrocks.connector.flink.table.sink;
 import org.apache.flink.configuration.Configuration;
 import org.junit.Test;
 
-import java.util.HashMap;
-
 import static org.junit.Assert.assertEquals;
 
 /**
