@@ -225,31 +225,24 @@ public class MergeCommitHttpLoaderTest {
     }
 
     /**
-     * Helper method to invoke completeAsyncMode via the Table.loadFinish flow,
-     * simulating what happens when LabelStateService returns a final status.
+     * Helper method to invoke the actual completeAsyncMode method in MergeCommitHttpLoader
+     * via reflection. This ensures tests exercise the real production code rather than
+     * a reimplementation of the logic.
      */
     private void invokeCompleteAsyncMode(LoadRequest.RequestRun requestRun,
                                          LabelStateService.LabelMeta labelMeta,
                                          Throwable throwable) {
-        Table table = requestRun.loadRequest.getTable();
-
-        if (throwable != null) {
-            table.loadFinish(requestRun, throwable);
-            return;
-        }
-
-        TransactionStatus status = labelMeta.transactionStatus;
-
-        // This replicates the logic from MergeCommitHttpLoader.completeAsyncMode
-        // to verify that VISIBLE and COMMITTED are both treated as success
-        if (status != TransactionStatus.VISIBLE && status != TransactionStatus.COMMITTED) {
-            table.loadFinish(
-                    requestRun,
-                    new RuntimeException(String.format(
-                            "Label %s does not in final status, current status: %s, reason: %s",
-                            requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason)));
-        } else {
-            table.loadFinish(requestRun, null);
+        try {
+            MergeCommitHttpLoader httpLoader = new MergeCommitHttpLoader();
+            java.lang.reflect.Method method = MergeCommitHttpLoader.class.getDeclaredMethod(
+                    "completeAsyncMode",
+                    LoadRequest.RequestRun.class,
+                    LabelStateService.LabelMeta.class,
+                    Throwable.class);
+            method.setAccessible(true);
+            method.invoke(httpLoader, requestRun, labelMeta, throwable);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke completeAsyncMode", e);
         }
     }
 
