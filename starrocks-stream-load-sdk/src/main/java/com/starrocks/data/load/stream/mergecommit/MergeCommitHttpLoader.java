@@ -343,7 +343,7 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             loadRequest.getTable().loadFinish(
                     requestRun,
                     new RuntimeException(String.format(
-                            "Label %s does not in final status, current status: %s, reason: %s",
+                            "Load failed, label %s, current status: %s, reason: %s",
                             requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason)));
         } else {
             loadRequest.getTable().loadFinish(requestRun, null);
