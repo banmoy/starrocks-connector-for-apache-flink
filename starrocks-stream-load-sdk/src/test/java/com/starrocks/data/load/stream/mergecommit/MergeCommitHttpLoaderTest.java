@@ -27,12 +27,10 @@ import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertNotNull;
@@ -66,8 +64,7 @@ public class MergeCommitHttpLoaderTest {
     }
 
     private static class SendLoadSpy {
-        private final List<LoadRequest.RequestRun> capturedRequests =
-                Collections.synchronizedList(new ArrayList<>());
+        private final AtomicInteger requestCount = new AtomicInteger(0);
         private volatile SendLoadObserver observer = (requestRun, count) -> {};
 
         public void setObserver(SendLoadObserver observer) {
@@ -77,11 +74,7 @@ public class MergeCommitHttpLoaderTest {
         public void install(MergeCommitLoader loader) {
             doAnswer(invocation -> {
                 LoadRequest.RequestRun requestRun = invocation.getArgument(0);
-                int count;
-                synchronized (capturedRequests) {
-                    capturedRequests.add(requestRun);
-                    count = capturedRequests.size();
-                }
+                int count = requestCount.incrementAndGet();
                 observer.onSend(requestRun, count);
                 return null;
             }).when(loader).sendLoad(any(), anyInt());
