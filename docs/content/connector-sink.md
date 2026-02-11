@@ -12,12 +12,9 @@ The Flink connector supports DataStream API, Table API & SQL, and Python API. It
 
 | Connector | Flink                         | StarRocks     | Java | Scala     |
 |-----------|-------------------------------|---------------| ---- |-----------|
+| 1.2.14    | 1.16,1.17,1.18,1.19,1.20      | 2.1 and later| 8    | 2.11,2.12 |
 | 1.2.12    | 1.16,1.17,1.18,1.19,1.20      | 2.1 and later| 8    | 2.11,2.12 |
 | 1.2.11    | 1.15,1.16,1.17,1.18,1.19,1.20 | 2.1 and later| 8    | 2.11,2.12 |
-| 1.2.10    | 1.15,1.16,1.17,1.18,1.19      | 2.1 and later| 8    | 2.11,2.12 |
-| 1.2.9     | 1.15,1.16,1.17,1.18           | 2.1 and later| 8    | 2.11,2.12 |
-| 1.2.8     | 1.13,1.14,1.15,1.16,1.17      | 2.1 and later| 8    | 2.11,2.12 |
-| 1.2.7     | 1.11,1.12,1.13,1.14,1.15      | 2.1 and later| 8    | 2.11,2.12 |
 
 ## Obtain Flink connector
 
@@ -86,7 +83,7 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 >
 > The name of Flink connector which is not formally released contains the `SNAPSHOT` suffix.
 
-## Options
+## General Options
 
 | **Option**                        | **Required** | **Default value** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 |-----------------------------------|--------------|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -102,7 +99,7 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 | sink.label-prefix                 | No           | NONE              | The label prefix used by Stream Load. Recommend to configure it if you are using exactly-once with connector 1.2.8 and later. See [exactly-once usage notes](#exactly-once).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | sink.buffer-flush.max-bytes       | No           | 94371840(90M)     | The maximum size of data that can be accumulated in memory before being sent to StarRocks at a time. The maximum value ranges from 64 MB to 10 GB. Setting this parameter to a larger value can improve loading performance but may increase loading latency. This parameter only takes effect when `sink.semantic` is set to `at-least-once`. If `sink.semantic` is set to `exactly-once`, the data in memory is flushed when a Flink checkpoint is triggered. In this circumstance, this parameter does not take effect. |
 | sink.buffer-flush.max-rows        | No           | 500000            | The maximum number of rows that can be accumulated in memory before being sent to StarRocks at a time. This parameter is available only when `sink.version` is `V1` and `sink.semantic` is `at-least-once`. Valid values: 64000 to 5000000.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| sink.buffer-flush.interval-ms     | No           | 300000            | The interval at which data is flushed. This parameter is available only when `sink.semantic` is `at-least-once`. Valid values: 1000 to 3600000. Unit: ms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| sink.buffer-flush.interval-ms     | No           | 300000            | The interval at which data is flushed. This parameter is available only when `sink.semantic` is `at-least-once`. Valid values: 1000 to 3600000. Since 1.2.14, valid values changed to (0, 3600000]. Unit: ms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | sink.max-retries                  | No           | 3                 | The number of times that the system retries to perform the Stream Load job. This parameter is available only when you set `sink.version` to `V1`. Valid values: 0 to 10.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | sink.connect.timeout-ms           | No           | 30000             | The timeout for establishing HTTP connection. Valid values: 100 to 60000. Unit: ms. Before 1.2.9, the default value is 1000.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | sink.socket.timeout-ms            | No           | -1                | Supported since 1.2.10. The time duration for which the HTTP client waits for data. Unit: ms. The default value `-1` means there is no timeout.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -118,6 +115,22 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 | sink.properties.strict_mode       | No           | false             | Specifies whether to enable the strict mode for Stream Load. It affects the loading behavior when there are unqualified rows, such as inconsistent column values. Valid values: `true` and `false`. Default value: `false`. See [Stream Load](https://docs.starrocks.io/en-us/latest/sql-reference/sql-statements/data-manipulation/STREAM%20LOAD) for details.                                                                                                                                                                                                                                                                                                                                                                      |
 | sink.properties.compression       | No           | NONE              | The compression algorithm used for Stream Load. Valid values: `lz4_frame`. Compression for json format needs connector 1.2.10 and StarRocks v3.2.7 or later. Compression for csv format needs connector 1.2.11 and there is no requirements for StarRocks version.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | sink.properties.prepared_timeout  | No           | NONE              | Supported since 1.2.12 and only effective when `sink.version` is `V2`. Requires StarRocks 3.5.4 or later. Sets the timeout in seconds for the Transaction Stream Load phase from `PREPARED` to `COMMITTED`. Typically only needed for exactly-once; at-least-once usually does not require setting this (the connector defaults to 300s). If not set in exactly-once, StarRocks FE configuration `prepared_transaction_default_timeout_second` (default 86400s) applies. See [StarRocks Transaction timeout management](https://docs.starrocks.io/docs/loading/Stream_Load_transaction_interface/#transaction-timeout-management). |
+| sink.publish-timeout.ms           | No           | -1                | Supported since 1.2.14 and only effective when `sink.version` is `V2`. Timeout in milliseconds for publish phase. If the transaction stays in COMMITTED status longer than this timeout, consider it as success. Default is -1 which means using StarRocks server-side default behavior. When merge commit is enabled, default is 10000ms. |
+
+## Merge Commit Options
+
+Supported since 1.2.14. Merge commit allows multiple subtasks to merge data into a single Stream Load transaction for better performance. It is enabled by setting `sink.properties.enable_merge_commit` to `true`. For more details about the merge commit feature in StarRocks, see [Merge Commit parameters](https://docs.starrocks.io/docs/sql-reference/sql-statements/loading_unloading/STREAM_LOAD/#merge-commit-parameters).
+
+The following stream load properties are used to control merge commit behavior:
+
+| **Option**                                   | **Required**                    | **Default value** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|----------------------------------------------|---------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| sink.properties.enable_merge_commit          | No                              | false             | Whether to enable merge commit mode.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| sink.properties.merge_commit_interval_ms     | Yes (when merge commit enabled) | NONE              | The merge commit time window in milliseconds. StarRocks merges loading requests received within this window into a single transaction. A larger value improves merging efficiency but increases latency. Must be set when `enable_merge_commit` is true.                                                                                                                                                                                                  |
+| sink.properties.merge_commit_parallel        | No                              | 3                 | The degree of parallelism for the loading plan created by StarRocks for each merge commit. This is different from `sink.parallelism` which controls the parallelism of the Flink sink operator.                                                                                                                                                                                                                                                          |
+| sink.properties.merge_commit_async           | No                              | true              | The server's return mode for merge commit. The StarRocks default is `false` (synchronous), but the connector overrides it to `true` (asynchronous) for better throughput. In async mode, the server returns immediately after receiving the data. The connector leverages Flink's checkpoint mechanism to ensure no data loss under async mode, providing at-least-once guarantee. Users generally do not need to change this to `false`.                   |
+| sink.merge-commit.max-concurrent-requests    | No           | Integer.MAX_VALUE | Max concurrent stream load requests. Set to `0` to ensure in-order (serial) loading, which is useful for Primary Key tables. A negative value is treated as `Integer.MAX_VALUE` (unlimited concurrency).                                                                                                                                                                                                                                                                                                                                                                             |
+| sink.merge-commit.chunk.size                 | No           | 20971520  | The maximum size of data (in bytes) accumulated in a chunk before it is flushed and sent to StarRocks via a stream load request. A larger value improves throughput but increases memory usage and latency; a smaller value reduces memory and latency but may lower throughput. When `max-concurrent-requests` is `0` (in-order mode), default is 500MB because only one request runs at a time so a larger batch maximizes throughput. |
 
 ## Data type mapping between Flink and StarRocks
 
@@ -206,6 +219,32 @@ For at-least-once, the flush will be triggered when any of the following conditi
 - a checkpoint is triggered
 
 For exactly-once, the flush only happens when a checkpoint is triggered.
+
+### Merge Commit
+
+Merge commit helps scale throughput without proportionally increasing StarRocks transaction overhead. Without merge commit, each Flink sink subtask maintains its own Stream Load transaction, so increasing `sink.parallelism` leads to more concurrent transactions and higher IO/Compaction costs on StarRocks. Conversely, keeping parallelism low limits the pipeline's overall capacity. With merge commit enabled, data from multiple sink subtasks is merged into a single transaction within each merge window. This allows you to increase `sink.parallelism` for higher throughput without increasing the number of transactions. For configuration examples, see [Load data with merge commit](#load-data-with-merge-commit).
+
+Here are some important notes when using merge commit:
+
+- **Single parallelism has no benefit**: If the Flink sink parallelism is 1, enabling merge commit provides no benefit since there is only one subtask sending data. It may even introduce additional latency due to the merge commit time window on the StarRocks side.
+
+- **Only at-least-once semantic**: Merge commit only provides at-least-once guarantee. It does not support exactly-once semantic. Do not set `sink.semantic` to `exactly-once` when merge commit is enabled.
+
+- **Ordering for Primary Key tables**: By default, `sink.merge-commit.max-concurrent-requests` is `Integer.MAX_VALUE`, which means a single sink subtask may send multiple stream load requests concurrently. This can cause out-of-order loading, which may be problematic for Primary Key tables. To ensure in-order loading, set `sink.merge-commit.max-concurrent-requests` to `0`, but this will reduce throughput. Alternatively, you can use Conditional update to prevent newer data from being overwritten by older data. For configuration examples, see [In-order loading for Primary Key tables](#in-order-loading-for-primary-key-tables).
+
+- **End-to-end loading latency**: The total loading latency consists of two parts:
+  - **Connector batching latency**: Determined by `sink.buffer-flush.interval-ms` and `sink.merge-commit.chunk.size`. Data is flushed from the connector when either the chunk size limit is reached or the flush interval elapses, whichever comes first. The maximum connector-side latency is `sink.buffer-flush.interval-ms`. A smaller `sink.buffer-flush.interval-ms` reduces connector-side latency but sends data in smaller batches.
+  - **StarRocks merge window**: Determined by `sink.properties.merge_commit_interval_ms`. StarRocks waits for this duration to merge requests from multiple subtasks into a single transaction. A larger value improves merging efficiency (more requests merged into one transaction) but increases StarRocks-side latency.
+  - As a general guideline, set `sink.buffer-flush.interval-ms` to be smaller than or equal to `sink.properties.merge_commit_interval_ms`, so that each subtask can flush at least once within each merge window. For example, if `merge_commit_interval_ms` is `10000` (10s), you could set `sink.buffer-flush.interval-ms` to `5000` (5s) or less.
+
+- **Tuning `sink.parallelism` and `sink.properties.merge_commit_parallel`**: These two parameters control parallelism at different layers and should be tuned independently:
+  - `sink.parallelism` controls the number of Flink sink subtasks. Each subtask buffers and sends data to StarRocks. Increase this value when Flink sink operators are CPU- or memory-bound — you can monitor Flink's per-operator CPU and memory usage to determine whether more subtasks are needed.
+  - `sink.properties.merge_commit_parallel` controls the degree of parallelism for the loading plan that StarRocks creates for each merge commit transaction. Increase this value when StarRocks becomes the bottleneck. You can monitor the StarRocks metrics [merge_commit_pending_total](https://docs.starrocks.io/docs/administration/management/monitoring/metrics#merge_commit_pending_total) (number of pending merge commit tasks) and [merge_commit_pending_bytes](https://docs.starrocks.io/docs/administration/management/monitoring/metrics#merge_commit_pending_bytes) (bytes held by pending tasks) to determine whether more parallelism is needed on the StarRocks side — sustained high values indicate that the loading plan cannot keep up with incoming data.
+
+- **Relationship between `sink.merge-commit.chunk.size` and `sink.buffer-flush.max-bytes`**:
+  - `sink.merge-commit.chunk.size` controls the maximum data size per individual stream load request (per chunk). When data in a chunk reaches this size, it is flushed immediately.
+  - `sink.buffer-flush.max-bytes` controls the total memory limit for all cached data across all tables. When the total cached data exceeds this limit, the connector will evict chunks early to free memory.
+  - Therefore, `sink.buffer-flush.max-bytes` should be set larger than `sink.merge-commit.chunk.size` to allow at least one full chunk to be accumulated. In general, `sink.buffer-flush.max-bytes` should be several times larger than `sink.merge-commit.chunk.size`, especially when there are multiple tables or high concurrency.
 
 ### Monitoring load metrics
 
@@ -610,6 +649,119 @@ takes effect only when the new value for `score` is has a greater or equal to th
     ```
 
   You can see that only the values of the second data row change, and the values of the first data row do not change.
+
+### Load data with merge commit
+
+This section shows how to use merge commit to improve loading throughput when you have multiple Flink sink subtasks writing to the same StarRocks table. These examples use Flink SQL and assume StarRocks v3.4.0 or later.
+
+#### Preparations
+
+Create a database `test` and create a Primary Key table `score_board` in StarRocks.
+
+```SQL
+CREATE DATABASE `test`;
+
+CREATE TABLE `test`.`score_board`
+(
+    `id` int(11) NOT NULL COMMENT "",
+    `name` varchar(65533) NULL DEFAULT "" COMMENT "",
+    `score` int(11) NOT NULL DEFAULT "0" COMMENT ""
+)
+ENGINE=OLAP
+PRIMARY KEY(`id`)
+COMMENT "OLAP"
+DISTRIBUTED BY HASH(`id`);
+```
+
+#### Basic configuration
+
+This Flink SQL enables merge commit with a 10-second merge window. Data from all sink subtasks is merged into a single transaction within each window.
+
+```SQL
+CREATE TABLE `score_board` (
+    `id` INT,
+    `name` STRING,
+    `score` INT,
+    PRIMARY KEY (id) NOT ENFORCED
+) WITH (
+    'connector' = 'starrocks',
+    'jdbc-url' = 'jdbc:mysql://127.0.0.1:9030',
+    'load-url' = '127.0.0.1:8030',
+    'database-name' = 'test',
+    'table-name' = 'score_board',
+    'username' = 'root',
+    'password' = '',
+    'sink.properties.enable_merge_commit' = 'true',
+    'sink.properties.merge_commit_interval_ms' = '10000',
+    'sink.buffer-flush.interval-ms' = '5000'
+);
+```
+
+Insert data into the Flink table. The data will be loaded into StarRocks via merge commit.
+
+```SQL
+INSERT INTO `score_board` VALUES (1, 'starrocks', 100), (2, 'flink', 95), (3, 'spark', 90);
+```
+
+#### In-order loading for Primary Key tables
+
+By default, a single sink subtask may send multiple stream load requests concurrently, which can cause out-of-order loading. For Primary Key tables where data ordering matters, there are two approaches to handle this.
+
+**Approach 1: Use `sink.merge-commit.max-concurrent-requests`**
+
+Set `sink.merge-commit.max-concurrent-requests` to `0` to ensure each subtask sends requests one at a time. This guarantees in-order loading but may reduce throughput.
+
+```SQL
+CREATE TABLE `score_board` (
+    `id` INT,
+    `name` STRING,
+    `score` INT,
+    PRIMARY KEY (id) NOT ENFORCED
+) WITH (
+    'connector' = 'starrocks',
+    'jdbc-url' = 'jdbc:mysql://127.0.0.1:9030',
+    'load-url' = '127.0.0.1:8030',
+    'database-name' = 'test',
+    'table-name' = 'score_board',
+    'username' = 'root',
+    'password' = '',
+    'sink.properties.enable_merge_commit' = 'true',
+    'sink.properties.merge_commit_interval_ms' = '10000',
+    'sink.buffer-flush.interval-ms' = '5000',
+    'sink.merge-commit.max-concurrent-requests' = '0'
+);
+
+INSERT INTO `score_board` VALUES (1, 'starrocks', 100), (2, 'flink', 95), (3, 'spark', 90);
+```
+
+**Approach 2: Use conditional update**
+
+If you want to keep concurrent requests for higher throughput but still prevent older data from overwriting newer data, you can use [Conditional update](#conditional-update). Set `sink.properties.merge_condition` to a column (for example, a version or timestamp column) so that an update only takes effect when the incoming value is greater than or equal to the existing value.
+
+```SQL
+CREATE TABLE `score_board` (
+    `id` INT,
+    `name` STRING,
+    `score` INT,
+    PRIMARY KEY (id) NOT ENFORCED
+) WITH (
+    'connector' = 'starrocks',
+    'jdbc-url' = 'jdbc:mysql://127.0.0.1:9030',
+    'load-url' = '127.0.0.1:8030',
+    'database-name' = 'test',
+    'table-name' = 'score_board',
+    'username' = 'root',
+    'password' = '',
+    'sink.properties.enable_merge_commit' = 'true',
+    'sink.properties.merge_commit_interval_ms' = '10000',
+    'sink.buffer-flush.interval-ms' = '5000',
+    'sink.properties.merge_condition' = 'score'
+);
+
+INSERT INTO `score_board` VALUES (1, 'starrocks', 100), (2, 'flink', 95), (3, 'spark', 90);
+```
+
+With this configuration, concurrent requests are allowed (default `sink.merge-commit.max-concurrent-requests` is `Integer.MAX_VALUE`), but an update to a row only takes effect when the new `score` is greater than or equal to the existing `score`. This prevents newer data from being overwritten by older data even under out-of-order loading.
 
 ### Load data into columns of BITMAP type
 
