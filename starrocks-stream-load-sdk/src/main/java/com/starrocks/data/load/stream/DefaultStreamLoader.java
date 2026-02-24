@@ -64,8 +64,6 @@ public class DefaultStreamLoader implements StreamLoader, Serializable {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultStreamLoader.class);
 
-    private static final int ERROR_LOG_MAX_LENGTH = 3000;
-
     protected StreamLoadProperties properties;
     private StreamLoadManager manager;
 

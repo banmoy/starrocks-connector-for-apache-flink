@@ -343,7 +343,7 @@ public class MergeCommitHttpLoader extends MergeCommitLoader {
             Optional<String> errorLog =
                     StreamLoadUtils.tryGetErrorLogForMergeCommit(labelMeta.reason, properties.isSanitizeErrorLog());
             String errorMsg = String.format(
-                    "Label %s does not in final status, current status: %s, reason: %s",
+                    "Label %s is not in final status, current status: %s, reason: %s",
                     requestRun.loadResult.getBody().getLabel(), status, labelMeta.reason);
             if (errorLog.isPresent()) {
                 errorMsg = errorMsg + ", errorLog: " + errorLog.get();
