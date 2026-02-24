@@ -45,6 +45,7 @@ import static com.starrocks.data.load.stream.StreamLoadConstants.getBeginUrl;
 import static com.starrocks.data.load.stream.StreamLoadConstants.getCommitUrl;
 import static com.starrocks.data.load.stream.StreamLoadConstants.getPrepareUrl;
 import static com.starrocks.data.load.stream.StreamLoadConstants.getRollbackUrl;
+import static com.starrocks.data.load.stream.StreamLoadUtils.getErrorLog;
 
 public class TransactionStreamLoader extends DefaultStreamLoader {
 
@@ -240,7 +241,7 @@ public class TransactionStreamLoader extends DefaultStreamLoader {
                 }
             }
 
-            String errorLog = getErrorLog(streamLoadBody.getErrorURL());
+            String errorLog = getErrorLog(streamLoadBody.getErrorURL(), properties.isSanitizeErrorLog());
             String errorMsg = String.format("Transaction prepare failed, db: %s, table: %s, label: %s, " +
                             "\nresponseBody: %s\nerrorLog: %s", transaction.getDatabase(), transaction.getTable(),
                             transaction.getLabel(), responseBody, errorLog);
@@ -312,7 +313,7 @@ public class TransactionStreamLoader extends DefaultStreamLoader {
                 return true;
             }
 
-            String errorLog = getErrorLog(streamLoadBody.getErrorURL());
+            String errorLog = getErrorLog(streamLoadBody.getErrorURL(), properties.isSanitizeErrorLog());
             log.error("Transaction commit failed, db: {}, table: {}, label: {}, label state: {}, \nresponseBody: {}\nerrorLog: {}",
                     transaction.getDatabase(), transaction.getTable(), transaction.getLabel(), labelState, responseBody, errorLog);
 

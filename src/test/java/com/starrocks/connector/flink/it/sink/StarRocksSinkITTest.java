@@ -41,6 +41,8 @@ import org.junit.runners.Parameterized;
 
 import javax.annotation.Nullable;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,6 +58,8 @@ import static com.starrocks.connector.flink.it.sink.StarRocksTableUtils.scanTabl
 import static com.starrocks.connector.flink.it.sink.StarRocksTableUtils.verifyResult;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 
 @RunWith(Parameterized.class)
@@ -186,7 +190,7 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
                         "CREATE TABLE `%s`.`%s` (" +
                                 "c0 INT," +
                                 "c1 FLOAT," +
-                                "c2 STRING" +
+                                "c2 STRING NOT NULL" +
                                 ") ENGINE = OLAP " +
                                 "DUPLICATE KEY(c0) " +
                                 "DISTRIBUTED BY HASH (c0) BUCKETS 8 " +
@@ -866,7 +870,58 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
         executeSrSQL(createStarRocksTable);
         return tableName;
     }
-    
+
+    @Test
+    public void testErrorLog() {
+        testErrorLogBase(false);
+        testErrorLogBase(true);
+    }
+
+    private void testErrorLogBase(boolean enableMergeCommit) {
+        assumeTrue(isSinkV2);
+        try {
+            String tableName = createMergeCommitTable("testErroLogBase", false);
+            StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+            env.setParallelism(1);
+            StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+            String sinkDdl = "CREATE TABLE sink(" +
+                                "c0 INT," +
+                                "c1 FLOAT," +
+                                "c2 STRING" +
+                            ") WITH ( " +
+                                "'connector' = 'starrocks'," +
+                                "'jdbc-url'='" + getJdbcUrl() + "'," +
+                                "'load-url'='" + getHttpUrls() + "'," +
+                                "'database-name' = '" + DB_NAME + "'," +
+                                "'table-name' = '" + tableName + "'," +
+                                "'username' = 'root'," +
+                                "'password' = ''," +
+                                "'sink.buffer-flush.interval-ms' = '500'," +
+                                "'sink.properties.enable_merge_commit' = '" + enableMergeCommit + "'," +
+                                "'sink.properties.merge_commit_interval_ms' = '1000'" +
+                            ")";
+            tEnv.executeSql(sinkDdl);
+
+            List<Row> testData = new ArrayList<>();
+            testData.add(Row.of(1, 10.1f, null));
+            testData.add(Row.of(2, 20.2f, null));
+            RowTypeInfo rowTypeInfo = new RowTypeInfo(
+                    new TypeInformation[] {Types.INT, Types.FLOAT, Types.STRING},
+                    new String[] {"c0", "c1", "c2"});
+            DataStream<Row> srcDs = env.fromCollection(testData).returns(rowTypeInfo);
+            Table in = tEnv.fromDataStream(srcDs);
+            tEnv.createTemporaryView("src", in);
+            tEnv.executeSql("INSERT INTO sink SELECT * FROM src").await();
+            fail("the job should fail because of data quality");
+        } catch (Exception e) {
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            assertTrue(sw.toString().contains(
+                    "errorLog: Error: NULL value in non-nullable column 'c2'. Row: [1, 10.1, NULL]\n" +
+                            "Error: NULL value in non-nullable column 'c2'. Row: [2, 20.2, NULL]"));
+        }
+    }
+
     @Test
     public void testMergeCommitAsync() throws Exception {
         for (boolean async : Arrays.asList(false, true)) {
@@ -957,7 +1012,7 @@ public class StarRocksSinkITTest extends StarRocksITTestBase {
                         "CREATE TABLE `%s`.`%s` (" +
                                 "c0 INT," +
                                 "c1 FLOAT," +
-                                "c2 STRING" +
+                                "c2 STRING NOT NULL" +
                                 ") ENGINE = OLAP " +
                                 (isPrimaryKey ? "PRIMARY KEY(`c0`)" : "DUPLICATE KEY(`c0`)") +
                                 "DISTRIBUTED BY HASH (c0) BUCKETS 8 " +

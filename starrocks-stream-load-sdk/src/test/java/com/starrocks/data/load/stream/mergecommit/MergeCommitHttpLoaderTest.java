@@ -23,6 +23,7 @@ import com.starrocks.data.load.stream.StreamLoadDataFormat;
 import com.starrocks.data.load.stream.StreamLoadResponse;
 import com.starrocks.data.load.stream.TransactionStatus;
 import com.starrocks.data.load.stream.mergecommit.fe.LabelStateService;
+import com.starrocks.data.load.stream.properties.StreamLoadProperties;
 import com.starrocks.data.load.stream.properties.StreamLoadTableProperties;
 import org.junit.Before;
 import org.junit.Test;
@@ -227,6 +228,14 @@ public class MergeCommitHttpLoaderTest {
                                          Throwable throwable) {
         try {
             MergeCommitHttpLoader httpLoader = new MergeCommitHttpLoader();
+
+            StreamLoadProperties props = mock(StreamLoadProperties.class);
+            doReturn(false).when(props).isSanitizeErrorLog();
+            java.lang.reflect.Field propertiesField =
+                    MergeCommitHttpLoader.class.getDeclaredField("properties");
+            propertiesField.setAccessible(true);
+            propertiesField.set(httpLoader, props);
+
             java.lang.reflect.Method method = MergeCommitHttpLoader.class.getDeclaredMethod(
                     "completeAsyncMode",
                     LoadRequest.RequestRun.class,

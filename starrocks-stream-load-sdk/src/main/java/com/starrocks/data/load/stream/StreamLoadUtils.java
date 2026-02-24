@@ -22,9 +22,11 @@ package com.starrocks.data.load.stream;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.http.HttpEntity;
 import org.apache.http.HttpHeaders;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.DefaultRedirectStrategy;
@@ -40,10 +42,15 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class StreamLoadUtils {
 
     private static final Logger LOG = LoggerFactory.getLogger(StreamLoadUtils.class);
+
+    private static final int ERROR_LOG_MAX_LENGTH = 3000;
 
     public static String getTableUniqueKey(String database, String table) {
         return database + "-" + table;
@@ -194,5 +201,56 @@ public class StreamLoadUtils {
             LOG.warn("Failed to connect to {}", urlStr, e);
             return false;
         }
+    }
+
+    public static String getErrorLog(String errorUrl, boolean sanitizeErrorLog) {
+        if (errorUrl == null || !errorUrl.startsWith("http")) {
+            return null;
+        }
+
+        try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+            HttpGet httpGet = new HttpGet(errorUrl);
+            try (CloseableHttpResponse resp = httpclient.execute(httpGet)) {
+                int code = resp.getStatusLine().getStatusCode();
+                if (200 != code) {
+                    LOG.warn("Request error log failed with error code: {}, errorUrl: {}", code, errorUrl);
+                    return null;
+                }
+
+                HttpEntity respEntity = resp.getEntity();
+                if (respEntity == null) {
+                    LOG.warn("Request error log failed with null entity, errorUrl: {}", errorUrl);
+                    return null;
+                }
+                String errorLog = EntityUtils.toString(respEntity);
+                if (errorLog != null && errorLog.length() > ERROR_LOG_MAX_LENGTH) {
+                    errorLog = errorLog.substring(0, ERROR_LOG_MAX_LENGTH);
+                }
+                return sanitizeErrorLog ? StreamLoadUtils.sanitizeErrorLog(errorLog) : errorLog;
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to get error log: {}.", errorUrl, e);
+            return String.format("Failed to get error log: %s, exception message: %s", errorUrl, e.getMessage());
+        }
+    }
+
+    // Error log url pattern in transaction aborted reason. This is only for merge commit
+    private static final Pattern ERROR_LOG_URL_PATTERN = Pattern.compile(
+            "(?:Tracking URL:|The tracking url:)\\s+" +
+                    "(https?://\\S*/api/_load_error_log\\?file=error_log_[0-9a-fA-F]+_[0-9a-fA-F]+)",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    public static Optional<String> tryGetErrorLogUrlFromTxnAbortReason(String abortReason) {
+        if (abortReason == null) {
+            return Optional.empty();
+        }
+        Matcher matcher = ERROR_LOG_URL_PATTERN.matcher(abortReason);
+        return matcher.find() ? Optional.ofNullable(matcher.group(1)) : Optional.empty();
+    }
+
+    public static Optional<String> tryGetErrorLogForMergeCommit(String txnAbortReason, boolean sanitizeErrorLog) {
+        Optional<String> errorLogUrl = tryGetErrorLogUrlFromTxnAbortReason(txnAbortReason);
+        return errorLogUrl.map(s -> getErrorLog(s, sanitizeErrorLog));
     }
 }
