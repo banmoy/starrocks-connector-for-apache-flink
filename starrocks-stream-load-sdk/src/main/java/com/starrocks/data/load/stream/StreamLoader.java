@@ -31,6 +31,20 @@ public interface StreamLoader {
     void close();
 
     boolean begin(TableRegion region);
+
+    /**
+     * Begin a transaction with an explicit label. Used by multi-table transaction mode
+     * where multiple tables share one transaction label. The transaction is opened at
+     * the database level without binding to a specific table, so subsequent
+     * /api/transaction/load calls can target different tables under this label.
+     *
+     * @return true if the transaction was successfully begun
+     */
+    default boolean beginTransaction(String label, String database) {
+        throw new UnsupportedOperationException(
+                "beginTransaction is not supported by this StreamLoader implementation");
+    }
+
     Future<StreamLoadResponse> send(TableRegion region);
 
     Future<StreamLoadResponse> send(TableRegion region, int delayMs);
@@ -44,6 +58,10 @@ public interface StreamLoader {
     boolean prepare(StreamLoadSnapshot snapshot);
     boolean commit(StreamLoadSnapshot snapshot);
     boolean rollback(StreamLoadSnapshot snapshot);
+
+    default boolean cancelLoad(String db, String table, String label) throws Exception {
+        throw new UnsupportedOperationException();
+    }
 
     default ExecutorService getExecutorService() {
         throw new UnsupportedOperationException();
